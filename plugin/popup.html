@@ -264,7 +264,7 @@
               <span>ایمیل جدید</span>
             </button>
           </div>
-          <div class="im-email-meta">
+          <div class="im-email-meta" id="activeMailMeta">
             آدرس به‌صورت خودکار ساخته می‌شود، حدود ۲ روز اعتبار دارد و قابل بازیابی نیست.
           </div>
           <div class="im-history-row">
@@ -287,7 +287,7 @@
 
           <div id="mailServiceChips" class="im-chips-row"></div>
 
-          <div class="im-group-tabs">
+          <div id="imGroupTabsBox" class="im-group-tabs">
             <button type="button" data-group="random" class="im-group-tab">
               <span data-icon="shuffle"></span>
               تصادفی
@@ -303,6 +303,46 @@
           </div>
 
           <div id="imDomainGrid" class="im-domain-grid"></div>
+
+          <!-- Gmail alias box — فقط وقتی سرویس «جیمیل من» انتخاب شده -->
+          <div id="gmailAliasBox" class="im-gmail-box hidden">
+            <!-- متصل -->
+            <div id="gmailConnectedBox" class="hidden">
+              <div class="im-gmail-status">
+                <span class="im-gmail-dot"></span>
+                <span id="gmailStatusEmail" class="im-gmail-email" dir="ltr">...</span>
+                <button id="gmailDisconnectBtn" class="im-mini-danger" title="قطع اتصال جیمیل (صندوق‌های ساخته‌شده حفظ می‌شوند)">
+                  <span data-icon="x" data-icon-class="ic ic-sm"></span>
+                </button>
+              </div>
+              <div class="im-gmail-preview">
+                <span id="gmailAliasPreviewLocal" dir="ltr">you</span>
+                <span class="im-gmail-plus">+</span>
+                <input
+                  type="text"
+                  id="gmailTagInput"
+                  class="im-input im-gmail-tag-input"
+                  placeholder="الیاس، مثلاً netflix"
+                  maxlength="30"
+                  dir="ltr"
+                />
+                <span class="im-gmail-domain" dir="ltr">@gmail.com</span>
+              </div>
+              <div class="im-gmail-note">
+                نامه‌های این آدرس به صندوق جیمیل خودت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. دامنه gmail.com واقعی است و هیچ سایتی آن را رد نمی‌کند.
+              </div>
+            </div>
+            <!-- متصل نیست -->
+            <div id="gmailConnectBox" class="hidden">
+              <div class="im-gmail-hint">
+                آدرس gmail.com واقعی روی جیمیل خودت — بدون خرید دامنه، بدون اکانت جدید؛ همهٔ سایت‌ها قبول می‌کنند.
+              </div>
+              <button id="openGmailWizardBtn" class="im-btn im-btn-primary">
+                <span data-icon="link"></span>
+                <span>اتصال جیمیل من (یک‌بار)</span>
+              </button>
+            </div>
+          </div>
 
           <input
             type="text"
@@ -338,6 +378,63 @@
 
           <div id="messagesList" class="im-msg-list"></div>
         </section>
+      </div>
+    </div>
+
+    <!-- Gmail Connect Wizard Modal -->
+    <div id="gmailWizardModal" class="modal-backdrop hidden">
+      <div class="modal modal-wizard">
+        <div class="modal-header-row">
+          <div class="modal-title"><span data-icon="mail-check"></span> اتصال جیمیل (فقط یک‌بار)</div>
+          <button id="closeGmailWizardBtn" class="text-btn"><span data-icon="x" data-icon-class="ic ic-sm"></span> بستن</button>
+        </div>
+        <div class="gw-sub">
+          با این اتصال، افزونه فقط <b>خواندن</b> نامه‌ها را دارد (Gmail API رسمی گوگل). هیچ ایمیلی ارسال یا حذف نمی‌شود.
+        </div>
+        <ol class="gw-steps">
+          <li>
+            <b>Google Cloud Console</b> را باز کن و یک پروژه بساز (یا پروژهٔ موجود را انتخاب کن).
+            <div class="gw-actions">
+              <button id="gwOpenConsoleBtn" class="btn btn-secondary btn-sm"><span data-icon="external-link" data-icon-class="ic ic-sm"></span> باز کردن کنسول</button>
+            </div>
+          </li>
+          <li>
+            در همان پروژه، <b>Gmail API</b> را فعال کن.
+            <div class="gw-actions">
+              <button id="gwOpenApiBtn" class="btn btn-secondary btn-sm"><span data-icon="external-link" data-icon-class="ic ic-sm"></span> فعال‌سازی Gmail API</button>
+            </div>
+          </li>
+          <li>
+            <b>OAuth consent screen</b> ← نوع External ← ایمیل خودت را Test User اضافه کن.
+          </li>
+          <li>
+            <b>Credentials ← Create Credentials ← OAuth client ID</b>، نوع را <b>Chrome Extension</b> بگذار و این Extension ID را وارد کن:
+            <div class="gw-copy-row">
+              <code id="gwExtId" dir="ltr">...</code>
+              <button id="gwCopyExtIdBtn" class="btn btn-secondary btn-sm" title="کپی Extension ID"><span data-icon="copy" data-icon-class="ic ic-sm"></span></button>
+            </div>
+            اگر نوع <b>Web application</b> ساختی، به‌جای آن این Redirect URI را اضافه کن:
+            <div class="gw-copy-row">
+              <code id="gwRedirect" dir="ltr">...</code>
+              <button id="gwCopyRedirectBtn" class="btn btn-secondary btn-sm" title="کپی Redirect URI"><span data-icon="copy" data-icon-class="ic ic-sm"></span></button>
+            </div>
+          </li>
+          <li>
+            <b>Client ID</b> ساخته‌شده را اینجا بچسبان:
+            <input
+              type="text"
+              id="gwClientIdInput"
+              class="im-input gw-client-input"
+              placeholder="1234-abc.apps.googleusercontent.com"
+              maxlength="120"
+              dir="ltr"
+            />
+          </li>
+        </ol>
+        <div id="gwError" class="gw-error hidden"></div>
+        <div class="modal-actions">
+          <button id="gwConnectBtn" class="btn btn-success btn-sm"><span data-icon="shield-check" data-icon-class="ic ic-sm"></span> اتصال و انتخاب حساب گوگل</button>
+        </div>
       </div>
     </div>
 

@@ -1515,6 +1515,369 @@ async function ioApiCall(url, options = {}) {
   return res.json();
 }
 
+// ----------------------------------------------------------------------------
+// Gmail Real — «جیمیل من (الیاس)»
+// آدرس‌های you+tag@gmail.com روی جیمیل واقعی کاربر؛ خواندن OTP با Gmail API.
+// OAuth دو مسیره: ۱) chrome.identity.getAuthToken (کلاینت از نوع Chrome Extension)
+//                 ۲) launchWebAuthFlow با response_type=token (کلاینت Web، بدون secret)
+// ----------------------------------------------------------------------------
+
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
+
+async function getGmailOAuth() {
+  const data = await chrome.storage.local.get('gmailOAuth');
+  return data.gmailOAuth || {
+    clientId: '',
+    email: '',
+    accessToken: '',
+    tokenExpiresAt: 0,
+    connectedAt: 0
+  };
+}
+
+async function saveGmailOAuth(oauth) {
+  await chrome.storage.local.set({ gmailOAuth: oauth });
+}
+
+function gmailRedirectUri() {
+  return `https://${chrome.runtime.id}.chromiumapp.org/`;
+}
+
+function validateGmailClientId(id) {
+  return /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i.test(String(id || '').trim());
+}
+
+function sanitizeGmailTag(v) {
+  return (v || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '')
+    .slice(0, 30);
+}
+
+function buildGmailAlias(baseEmail, tag) {
+  const cleanBase = String(baseEmail || '').trim().toLowerCase();
+  const atIdx = cleanBase.lastIndexOf('@');
+  if (atIdx <= 0 || !cleanBase.slice(atIdx + 1)) {
+    throw new Error('آدرس جیمیل پایه معتبر نیست.');
+  }
+  const local = cleanBase.slice(0, atIdx);
+  const domain = cleanBase.slice(atIdx + 1);
+  const t = sanitizeGmailTag(tag);
+  if (!t) {
+    throw new Error('نام الیاس را وارد کنید (مثلاً: netflix).');
+  }
+  return { address: `${local}+${t}@${domain}`, tag: t };
+}
+
+function b64urlDecode(s) {
+  const clean = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = clean.length % 4 ? '='.repeat(4 - (clean.length % 4)) : '';
+  const bin = atob(clean + pad);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function gmailWalkParts(part, out) {
+  if (!part) return;
+  const mime = part.mimeType || '';
+  if (mime === 'text/plain' && part.body?.data) {
+    out.text.push(b64urlDecode(part.body.data));
+  } else if (mime === 'text/html' && part.body?.data) {
+    out.html.push(b64urlDecode(part.body.data));
+  }
+  if (Array.isArray(part.parts) && part.parts.length) {
+    for (const p of part.parts) gmailWalkParts(p, out);
+  } else if (
+    !out.text.length &&
+    !out.html.length &&
+    part.body?.data &&
+    mime &&
+    mime !== 'multipart/alternative' &&
+    mime !== 'multipart/mixed' &&
+    mime !== 'multipart/related'
+  ) {
+    // پیام تک‌بخشی بدون mimeType متنی مشخص
+    try {
+      out.text.push(b64urlDecode(part.body.data));
+    } catch {}
+  }
+}
+
+function gmailHeader(headers, name) {
+  const h = (headers || []).find(
+    (x) => String(x?.name || '').toLowerCase() === name.toLowerCase()
+  );
+  return h ? String(h.value || '') : '';
+}
+
+function parseFromHeader(raw) {
+  const v = String(raw || '').trim();
+  const m = v.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>\s*$/);
+  if (m) {
+    return { name: m[1].trim(), address: m[2].trim() };
+  }
+  return { name: '', address: v };
+}
+
+function gmailExtract(full) {
+  const payload = full?.payload || {};
+  const headers = payload.headers || [];
+  const from = parseFromHeader(gmailHeader(headers, 'From'));
+  const subject = gmailHeader(headers, 'Subject') || '(بدون موضوع)';
+  const parts = { text: [], html: [] };
+  gmailWalkParts(payload, parts);
+  const text = parts.text.join('\n').trim();
+  const html = parts.html;
+  const createdAt = full?.internalDate
+    ? new Date(Number(full.internalDate)).toISOString()
+    : '';
+  return {
+    id: String(full?.id || ''),
+    fromAddress: from.address,
+    fromName: from.name || from.address || 'ناشناس',
+    subject,
+    text,
+    html,
+    createdAt,
+    otpCode: extractOtpCode(`${subject}\n${text}\n${html.join('\n')}`),
+    links: extractVerificationLinks(text, html)
+  };
+}
+
+async function getGmailAccessToken(interactive = false) {
+  const oauth = await getGmailOAuth();
+  const now = Date.now();
+
+  // ۱) توکن وب‌فلو کش‌شده هنوز معتبر است
+  if (oauth.accessToken && oauth.tokenExpiresAt > now + 60_000) {
+    return oauth.accessToken;
+  }
+
+  // ۲) توکن مدیریت‌شده توسط کروم (کلاینت از نوع Chrome Extension)
+  try {
+    const token = await new Promise((resolve, reject) => {
+      try {
+        chrome.identity.getAuthToken({ interactive, scopes: [GMAIL_SCOPE] }, (t) => {
+          const err = chrome.runtime.lastError;
+          if (err || !t) reject(new Error(err?.message || 'no-token'));
+          else resolve(t);
+        });
+      } catch (e) {
+        reject(e);
+      }
+    });
+    if (token) {
+      await saveGmailOAuth({
+        ...oauth,
+        accessToken: token,
+        tokenExpiresAt: now + 45 * 60 * 1000
+      });
+      return token;
+    }
+  } catch (_) {}
+
+  if (!oauth.clientId) {
+    throw new Error('جیمیل متصل نیست؛ ابتدا از ویزارد «اتصال جیمیل» Client ID را وارد کنید.');
+  }
+
+  // ۳) تمدید بی‌صدا (اگر نشست گوگل در مرورگر زنده باشد)
+  try {
+    const { token, expiresIn } = await gmailTokenViaWebFlow(oauth.clientId, false);
+    await saveGmailOAuth({
+      ...oauth,
+      accessToken: token,
+      tokenExpiresAt: now + Math.max(120, expiresIn - 120) * 1000
+    });
+    return token;
+  } catch (_) {}
+
+  if (!interactive) {
+    throw new Error('نشست گوگل منقضی شده است؛ یک‌بار دیگر «اتصال جیمیل» را بزنید.');
+  }
+
+  // ۴) ورود تعاملی
+  const { token, expiresIn } = await gmailTokenViaWebFlow(oauth.clientId, true);
+  await saveGmailOAuth({
+    ...oauth,
+    accessToken: token,
+    tokenExpiresAt: now + Math.max(120, expiresIn - 120) * 1000
+  });
+  return token;
+}
+
+async function gmailTokenViaWebFlow(clientId, interactive) {
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('redirect_uri', gmailRedirectUri());
+  url.searchParams.set('response_type', 'token');
+  url.searchParams.set('scope', GMAIL_SCOPE);
+  url.searchParams.set('include_granted_scopes', 'true');
+  url.searchParams.set('prompt', interactive ? 'consent' : 'none');
+
+  let redirect = '';
+  try {
+    redirect = await chrome.identity.launchWebAuthFlow({
+      url: url.toString(),
+      interactive
+    });
+  } catch (e) {
+    throw new Error(
+      interactive
+        ? 'ورود گوگل ناموفق بود: ' + (e?.message || 'پنجره بسته شد.')
+        : 'silent-failed'
+    );
+  }
+  if (!redirect) throw new Error(interactive ? 'پنجره ورود گوگل بسته شد.' : 'silent-failed');
+  const tokenM = redirect.match(/access_token=([^&]+)/);
+  const expM = redirect.match(/expires_in=(\d+)/);
+  if (!tokenM) throw new Error('پاسخ گوگل فاقد توکن دسترسی بود.');
+  return { token: tokenM[1], expiresIn: expM ? Number(expM[1]) : 3600 };
+}
+
+async function gmailApiFetch(path, { interactive = false } = {}) {
+  const call = async (token) => {
+    const res = await fetch(`${GMAIL_API_BASE}${path}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+    });
+    return res;
+  };
+
+  let token = await getGmailAccessToken(interactive);
+  let res = await call(token);
+
+  if (res.status === 401) {
+    const oauth = await getGmailOAuth();
+    try {
+      await chrome.identity.removeCachedAuthToken({ token }).catch?.(() => {});
+    } catch (_) {}
+    await saveGmailOAuth({ ...oauth, accessToken: '', tokenExpiresAt: 0 });
+    token = await getGmailAccessToken(interactive);
+    res = await call(token);
+  }
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const j = await res.json();
+      detail = j?.error?.message || '';
+    } catch (_) {}
+    if (res.status === 403 && /invalid credentials| MAIL_INVALID/i.test(detail)) {
+      throw new Error('دسترسی Gmail API هنوز در پروژهٔ گوگل فعال نشده است.');
+    }
+    throw new Error(`خطای Gmail API (${res.status}) ${detail}`.trim());
+  }
+  return res.json();
+}
+
+async function fetchGmailProfile() {
+  const data = await gmailApiFetch('/profile', { interactive: true });
+  return String(data?.emailAddress || '').trim();
+}
+
+async function connectGmail(clientId) {
+  const oauth = await getGmailOAuth();
+  const cleanId = String(clientId || '').trim();
+  if (cleanId) {
+    if (!validateGmailClientId(cleanId)) {
+      throw new Error('قالب Client ID معتبر نیست (باید با apps.googleusercontent.com تمام شود).');
+    }
+    await saveGmailOAuth({ ...oauth, clientId: cleanId });
+  }
+
+  const email = await fetchGmailProfile();
+  if (!email) throw new Error('ایمیل حساب گوگل دریافت نشد.');
+
+  const latest = await getGmailOAuth();
+  await saveGmailOAuth({ ...latest, email, connectedAt: Date.now() });
+  return { email };
+}
+
+async function disconnectGmail() {
+  const oauth = await getGmailOAuth();
+  if (oauth.accessToken) {
+    try {
+      await chrome.identity.removeCachedAuthToken({ token: oauth.accessToken });
+    } catch (_) {}
+  }
+  await saveGmailOAuth({
+    clientId: oauth.clientId,
+    email: '',
+    accessToken: '',
+    tokenExpiresAt: 0,
+    connectedAt: 0
+  });
+}
+
+async function createGmailAliasMailbox(tag) {
+  const oauth = await getGmailOAuth();
+  let baseEmail = oauth.email;
+  if (!baseEmail) {
+    baseEmail = await fetchGmailProfile();
+    const latest = await getGmailOAuth();
+    await saveGmailOAuth({ ...latest, email: baseEmail, connectedAt: Date.now() });
+  }
+
+  const { address, tag: cleanTag } = buildGmailAlias(baseEmail, tag);
+
+  const st = await getMailState();
+  if (st.mailboxes.some((m) => m.address === address)) {
+    st.activeMailboxId = st.mailboxes.find((m) => m.address === address).id;
+    await saveMailState(st);
+    throw new Error('این الیاس قبلاً ساخته شده و صندوق آن فعال شد.');
+  }
+
+  const mailbox = {
+    id: newMailboxId(),
+    ptype: 'gmail',
+    provider: 'gmail_real',
+    address,
+    baseEmail,
+    tag: cleanTag,
+    createdAt: Date.now()
+  };
+  st.mailboxes.unshift(mailbox);
+  st.activeMailboxId = mailbox.id;
+  await saveMailState(st);
+  return mailbox;
+}
+
+async function gmailListMessages(mb) {
+  const q = `deliveredto:${mb.address}`;
+  const data = await gmailApiFetch(
+    `/messages?q=${encodeURIComponent(q)}&maxResults=20`
+  );
+  const items = Array.isArray(data?.messages) ? data.messages : [];
+  const out = [];
+  for (const it of items.slice(0, 20)) {
+    try {
+      const full = await gmailApiFetch(
+        `/messages/${encodeURIComponent(it.id)}?format=full`
+      );
+      const m = gmailExtract(full);
+      out.push({
+        id: m.id,
+        fromAddress: m.fromAddress,
+        fromName: m.fromName,
+        subject: m.subject,
+        intro: (m.text || '').slice(0, 160),
+        seen: false,
+        createdAt: m.createdAt,
+        otpCode: m.otpCode
+      });
+    } catch (_) {}
+  }
+  return out;
+}
+
+async function gmailReadMessage(mb, messageId) {
+  const full = await gmailApiFetch(
+    `/messages/${encodeURIComponent(messageId)}?format=full`
+  );
+  return gmailExtract(full);
+}
+
 async function getMailState() {
   const data = await chrome.storage.local.get('mailState');
   const st = data.mailState || { activeMailboxId: null, mailboxes: [] };
@@ -1534,16 +1897,31 @@ function extractHydraList(json) {
 
 function extractOtpCode(text) {
   if (!text || typeof text !== 'string') return null;
-  // Prioritize 5-8 digit codes near verification keywords, or standalone 6-digit codes
-  const keywordMatch = text.match(
-    /(?:code|verification|verify|otp|pin|passcode|کد|تایید|تأیید)[^\d]{0,30}(\b\d{4,8}\b)/i
-  );
-  if (keywordMatch) return keywordMatch[1];
 
-  const sixDigit = text.match(/\b(\d{6})\b/);
+  // نرمال‌سازی ارقام فارسی/عربی به لاتین (خیلی از سرویس‌های ایرانی کد فارسی می‌فرستند)
+  const normalized = text
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+
+  // ۱) کد نزدیک کلیدواژه‌های تأیید
+  const kwIdx = normalized.search(
+    /(?:code|verification|verify|otp|pin|passcode|رمز|کد|تایید|تأیید)/i
+  );
+  if (kwIdx >= 0) {
+    const after = normalized.slice(kwIdx, kwIdx + 90);
+    // کد ۶رقمی با فاصله یا خط‌تیره (سبک واتساپ/اینستاگرام): «553 118» / «553-118»
+    const spaced = after.match(/(?:\d{3})[ \-](\d{3})(?!\d)/);
+    if (spaced) return `${spaced[0].slice(0, 3)}${spaced[1]}`;
+    const keywordMatch = after.match(
+      /(?:code|verification|verify|otp|pin|passcode|رمز|کد|تایید|تأیید)[^\d]{0,30}(\b\d{4,8}\b)/i
+    );
+    if (keywordMatch) return keywordMatch[1];
+  }
+
+  const sixDigit = normalized.match(/\b(\d{6})\b/);
   if (sixDigit) return sixDigit[1];
 
-  const fiveOrFour = text.match(/\b(\d{4,8})\b/);
+  const fiveOrFour = normalized.match(/\b(\d{4,8})\b/);
   if (fiveOrFour) {
     const val = fiveOrFour[1];
     // Avoid matching common years like 2024-2029
@@ -1938,6 +2316,7 @@ async function listMessagesForMailbox(mb) {
   const type = getMailboxType(mb);
   if (type === 'hd') return hdListMessages(mb);
   if (type === 'io') return ioListMessages(mb);
+  if (type === 'gmail') return gmailListMessages(mb);
   return hydraListMessages(mb);
 }
 
@@ -1945,7 +2324,19 @@ async function readMessageForMailbox(mb, messageId) {
   const type = getMailboxType(mb);
   if (type === 'hd') return hdReadMessage(mb, messageId);
   if (type === 'io') return ioReadMessage(mb, messageId);
+  if (type === 'gmail') return gmailReadMessage(mb, messageId);
   return hydraReadMessage(mb, messageId);
+}
+
+function summarizeMailbox(m) {
+  return {
+    id: m.id,
+    provider: m.provider,
+    ptype: m.ptype || '',
+    address: m.address,
+    tag: m.tag || '',
+    createdAt: m.createdAt
+  };
 }
 
 async function mailAuthedFetch(mailbox, path, options = {}) {
@@ -2503,13 +2894,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return {
             ok: true,
             activeMailboxId: st.activeMailboxId,
-            mailboxes: st.mailboxes.map((m) => ({
-              id: m.id,
-              provider: m.provider,
-              address: m.address,
-              createdAt: m.createdAt
-            }))
+            mailboxes: st.mailboxes.map(summarizeMailbox)
           };
+        }
+
+        case 'GMAIL_GET_STATUS': {
+          const oauth = await getGmailOAuth();
+          return {
+            ok: true,
+            connected: Boolean(oauth.email),
+            email: oauth.email || '',
+            clientId: oauth.clientId || '',
+            extensionId: chrome.runtime.id,
+            redirectUri: gmailRedirectUri()
+          };
+        }
+
+        case 'GMAIL_CONNECT': {
+          const { email } = await connectGmail(msg.clientId || '');
+          const oauth = await getGmailOAuth();
+          return {
+            ok: true,
+            email,
+            connected: true,
+            clientId: oauth.clientId || '',
+            extensionId: chrome.runtime.id,
+            redirectUri: gmailRedirectUri()
+          };
+        }
+
+        case 'GMAIL_DISCONNECT': {
+          await disconnectGmail();
+          return { ok: true, connected: false };
         }
 
         case 'MAIL_FETCH_DOMAINS': {
@@ -2519,27 +2935,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         case 'MAIL_CREATE_INBOX': {
-          const mb = await createTempMailbox(
-            msg.provider || 'hd',
-            msg.customUser || '',
-            msg.domain || ''
-          );
+          const mb =
+            msg.provider === 'gmail_real'
+              ? await createGmailAliasMailbox(msg.customUser || '')
+              : await createTempMailbox(
+                  msg.provider || 'hd',
+                  msg.customUser || '',
+                  msg.domain || ''
+                );
           const st = await getMailState();
           return {
             ok: true,
-            mailbox: {
-              id: mb.id,
-              provider: mb.provider,
-              address: mb.address,
-              createdAt: mb.createdAt
-            },
+            mailbox: summarizeMailbox(mb),
             activeMailboxId: st.activeMailboxId,
-            mailboxes: st.mailboxes.map((m) => ({
-              id: m.id,
-              provider: m.provider,
-              address: m.address,
-              createdAt: m.createdAt
-            }))
+            mailboxes: st.mailboxes.map(summarizeMailbox)
           };
         }
 
@@ -2562,12 +2971,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return {
             ok: true,
             activeMailboxId: st.activeMailboxId,
-            mailboxes: st.mailboxes.map((m) => ({
-              id: m.id,
-              provider: m.provider,
-              address: m.address,
-              createdAt: m.createdAt
-            }))
+            mailboxes: st.mailboxes.map(summarizeMailbox)
           };
         }
 
@@ -2629,6 +3033,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             await mailAuthedFetch(mb, `/messages/${encodeURIComponent(msg.messageId)}`, {
               method: 'DELETE'
             });
+          } else if (getMailboxType(mb) === 'gmail') {
+            return {
+              ok: false,
+              error: 'پیام واقعی جیمیل شما حذف نمی‌شود؛ در صورت نیاز آن را از Gmail پاک کنید.'
+            };
           } else {
             // سرورهای Instant Mail / Temp-Mail.io حذف دستی ندارند؛ پیام‌ها خودکار منقضی می‌شوند.
             return {
