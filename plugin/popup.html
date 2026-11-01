@@ -24,9 +24,14 @@
           </div>
         </div>
       </div>
-      <button id="toggleSettingsBtn" class="icon-btn" title="تنظیمات و پشتیبان‌گیری">
-        <span data-icon="settings"></span>
-      </button>
+      <div class="header-actions">
+        <button id="quickSearchBtn" class="icon-btn" title="جست‌وجوی سریع اکانت‌ها (Alt+Shift+F)">
+          <span data-icon="search"></span>
+        </button>
+        <button id="toggleSettingsBtn" class="icon-btn" title="تنظیمات و پشتیبان‌گیری">
+          <span data-icon="settings"></span>
+        </button>
+      </div>
     </header>
 
     <!-- Main Navigation Tabs -->
@@ -76,6 +81,14 @@
         <input type="checkbox" id="chkIncludeStorage" />
       </label>
 
+      <label class="toggle-row">
+        <div>
+          <div class="toggle-title">اعلان دسکتاپ پیام و کد تأیید</div>
+          <div class="toggle-desc">حتی وقتی پنجره افزونه بسته است، ورود پیام یا OTP اعلان بدهد</div>
+        </div>
+        <input type="checkbox" id="chkDesktopNotif" checked />
+      </label>
+
       <div class="backup-box">
         <div class="backup-title">پشتیبان‌گیری کامل اکانت‌ها + ایمیل‌ها (JSON)</div>
         <div class="backup-actions">
@@ -88,7 +101,7 @@
 
       <div class="shortcut-hint">
         <span data-icon="keyboard" data-icon-class="ic ic-sm"></span>
-        <span>میانبر کیبورد: <kbd>Alt + Shift + S</kbd> (بعدی) | <kbd>Alt + Shift + A</kbd> (قبلی)</span>
+        <span>میانبر: <kbd>Alt + Shift + F</kbd> جست‌وجوی سریع | <kbd>Alt + Shift + S</kbd> بعدی | <kbd>Alt + Shift + A</kbd> قبلی</span>
       </div>
     </section>
 
@@ -195,7 +208,13 @@
               class="input input-search"
               placeholder="جستجو در بین اکانت‌ها..."
             />
+            <select id="sortSelect" class="select-input sort-select" title="مرتب‌سازی اکانت‌ها">
+              <option value="recent" selected>آخرین استفاده</option>
+              <option value="name">بر اساس نام</option>
+              <option value="created">جدیدترین ساخته‌شده</option>
+            </select>
           </div>
+          <div id="labelFilterRow" class="label-filter-row hidden"></div>
 
           <div id="emptyAccountsState" class="empty-state hidden">
             <div class="empty-title">هنوز اکانتی برای این سایت ذخیره نشده است</div>
@@ -328,6 +347,14 @@
         <div class="modal-title"><span data-icon="pen"></span> ویرایش مشخصات اکانت</div>
         <input type="text" id="editNameInput" class="input" placeholder="نام اکانت" maxlength="45" />
         <input type="text" id="editNoteInput" class="input" placeholder="یادداشت یا ایمیل" maxlength="60" />
+        <div class="edit-labels-box">
+          <div class="edit-labels-title"><span data-icon="tag" data-icon-class="ic ic-sm"></span> برچسب‌ها و پین</div>
+          <div id="editLabelPicker" class="edit-label-picker"></div>
+          <div class="edit-custom-row">
+            <input type="text" id="editCustomLabelInput" class="input input-sm" placeholder="برچسب دلخواه..." maxlength="18" />
+            <button id="addCustomLabelBtn" class="btn btn-secondary btn-sm"><span data-icon="plus" data-icon-class="ic ic-sm"></span> افزودن</button>
+          </div>
+        </div>
         <div class="color-picker" id="editColorPicker"></div>
         <div class="modal-actions">
           <button id="saveEditBtn" class="btn btn-primary btn-sm">ذخیره تغییرات</button>

@@ -8,6 +8,19 @@ const COLORS = [
   '#3b82f6', '#ef4444'
 ];
 
+const LABEL_PRESETS = ['کاری', 'شخصی', 'آزمایشی'];
+const LABEL_COLORS = {
+  'کاری': '#818cf8',
+  'شخصی': '#34d399',
+  'آزمایشی': '#fbbf24'
+};
+function labelColor(label) {
+  if (LABEL_COLORS[label]) return LABEL_COLORS[label];
+  let h = 0;
+  for (const ch of String(label)) h = (h * 31 + ch.codePointAt(0)) % 360;
+  return `hsl(${h}, 70%, 68%)`;
+}
+
 // ----------------------------------------------------------------------------
 // SVG icon system (Lucide-style, stroke = currentColor) — هیچ ایموجی خام در UI
 // ----------------------------------------------------------------------------
@@ -45,7 +58,11 @@ const ICON_PATHS = {
   pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
   play: '<polygon points="6 3 20 12 6 21 6 3"/>',
   'alert-triangle': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-  keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/>'
+  keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+  tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
+  bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+  'arrow-down-up': '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>'
 };
 
 function ic(name, cls = 'ic') {
@@ -155,9 +172,12 @@ let providerDomainsCache = {}; // provider -> { domains, popular }
 
 let currentView = 'accounts'; // 'accounts' | 'mail'
 let searchQuery = '';
+let listPref = { label: '', sort: 'recent' };
 let pendingDeleteId = null;
 let editingAccountId = null;
 let editingColor = COLORS[0];
+let editingLabels = [];
+let editingPinned = false;
 let toastTimer = null;
 let inboxPollTimer = null;
 
@@ -166,6 +186,10 @@ const els = {
   countBadge: document.getElementById('countBadge'),
   isoCountBadge: document.getElementById('isoCountBadge'),
   toggleSettingsBtn: document.getElementById('toggleSettingsBtn'),
+  quickSearchBtn: document.getElementById('quickSearchBtn'),
+  chkDesktopNotif: document.getElementById('chkDesktopNotif'),
+  sortSelect: document.getElementById('sortSelect'),
+  labelFilterRow: document.getElementById('labelFilterRow'),
   closeSettingsBtn: document.getElementById('closeSettingsBtn'),
   tabAccountsBtn: document.getElementById('tabAccountsBtn'),
   tabMailBtn: document.getElementById('tabMailBtn'),
@@ -203,6 +227,9 @@ const els = {
   editModal: document.getElementById('editModal'),
   editNameInput: document.getElementById('editNameInput'),
   editNoteInput: document.getElementById('editNoteInput'),
+  editLabelPicker: document.getElementById('editLabelPicker'),
+  editCustomLabelInput: document.getElementById('editCustomLabelInput'),
+  addCustomLabelBtn: document.getElementById('addCustomLabelBtn'),
   editColorPicker: document.getElementById('editColorPicker'),
   saveEditBtn: document.getElementById('saveEditBtn'),
   cancelEditBtn: document.getElementById('cancelEditBtn'),
@@ -286,6 +313,8 @@ els.tabMailBtn.addEventListener('click', () => switchView('mail'));
 async function loadState() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
+  await loadListPref();
+
   const [res, mRes] = await Promise.all([
     sendMsg({ type: 'GET_SITE_STATE', tabId: tab?.id, url: tab?.url }),
     sendMsg({ type: 'MAIL_GET_STATE' })
@@ -350,6 +379,8 @@ function renderUI() {
   els.chkAutoSync.checked = state.settings.autoSync !== false;
   els.chkIncludeStorage.checked = state.settings.includeStorage !== false;
 
+  loadNotifPref();
+
   // Link active mail indicator
   const activeMb = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
   if (activeMb) {
@@ -393,7 +424,76 @@ function renderUI() {
   els.searchInput.parentElement.classList.toggle('hidden', total < 4);
   els.emptyAccountsState.classList.toggle('hidden', total > 0);
 
+  els.sortSelect.value = listPref.sort || 'recent';
+  renderLabelFilterRow();
   renderAccountsList();
+}
+
+async function loadListPref() {
+  try {
+    const data = await chrome.storage.local.get('listPref');
+    if (data.listPref && typeof data.listPref === 'object') {
+      listPref = { ...listPref, ...data.listPref };
+    }
+  } catch {}
+}
+
+function saveListPref() {
+  chrome.storage.local.set({ listPref }).catch(() => {});
+}
+
+function sortedAccountsForDisplay() {
+  const sort = listPref.sort || 'recent';
+  const arr = [...state.accounts];
+  arr.sort((a, b) => {
+    if (Boolean(b.pinned) !== Boolean(a.pinned)) return b.pinned ? 1 : -1;
+    if (sort === 'name') return String(a.name).localeCompare(String(b.name), 'fa');
+    if (sort === 'created') return (b.createdAt || 0) - (a.createdAt || 0);
+    return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
+  });
+  return arr;
+}
+
+function getAllUsedLabels() {
+  const set = new Set();
+  for (const acc of state.accounts) {
+    for (const l of acc.labels || []) set.add(l);
+  }
+  return Array.from(set);
+}
+
+function renderLabelFilterRow() {
+  const labels = getAllUsedLabels();
+  els.labelFilterRow.classList.toggle('hidden', labels.length === 0);
+  els.labelFilterRow.innerHTML = '';
+
+  const mkChip = (label, isActive, color) => {
+    const chip = document.createElement('button');
+    chip.className = 'filter-chip' + (isActive ? ' active' : '');
+    if (label === '__all__') {
+      chip.innerHTML = `${ic('users', 'ic ic-sm')}<span></span>`;
+      chip.querySelector('span').textContent = 'همه';
+    } else {
+      chip.innerHTML = `${ic('tag', 'ic ic-sm')}<span></span>`;
+      chip.querySelector('span').textContent = label;
+    }
+    if (color && isActive) {
+      chip.style.borderColor = color;
+      chip.style.color = color;
+    }
+    chip.addEventListener('click', () => {
+      listPref.label = label === '__all__' ? '' : label;
+      saveListPref();
+      renderLabelFilterRow();
+      renderAccountsList();
+    });
+    return chip;
+  };
+
+  els.labelFilterRow.appendChild(mkChip('__all__', !listPref.label));
+  labels.forEach((l) => {
+    els.labelFilterRow.appendChild(mkChip(l, listPref.label === l, labelColor(l)));
+  });
 }
 
 function renderAccountsList() {
@@ -405,9 +505,18 @@ function renderAccountsList() {
     openTabByAccId.set(item.accountId, item.tabId);
   }
 
-  state.accounts.forEach((acc, idx) => {
+  const originalIndexById = new Map();
+  state.accounts.forEach((acc, idx) => originalIndexById.set(acc.id, idx));
+
+  const sorted = sortedAccountsForDisplay();
+
+  sorted.forEach((acc) => {
+    const idx = originalIndexById.get(acc.id);
+
+    if (listPref.label && !(acc.labels || []).includes(listPref.label)) return;
+
     if (q) {
-      const hay = `${acc.name} ${acc.note || ''} ${acc.email || ''} ${idx + 1} ${toFa(idx + 1)}`.toLowerCase();
+      const hay = `${acc.name} ${acc.note || ''} ${acc.email || ''} ${(acc.labels || []).join(' ')} ${idx + 1} ${toFa(idx + 1)}`.toLowerCase();
       if (!hay.includes(q)) return;
     }
 
@@ -449,6 +558,22 @@ function renderAccountsList() {
       activePill.textContent = state.isIsolatedTab ? 'این تب' : 'فعال';
       titleRow.appendChild(activePill);
     }
+
+    if (acc.pinned) {
+      const pinPill = document.createElement('span');
+      pinPill.className = 'pill-badge pill-pin';
+      pinPill.innerHTML = `${ic('pin', 'ic ic-xs')}<span>پین</span>`;
+      titleRow.appendChild(pinPill);
+    }
+
+    (acc.labels || []).slice(0, 3).forEach((l) => {
+      const lbl = document.createElement('span');
+      lbl.className = 'pill-badge pill-label';
+      lbl.style.borderColor = labelColor(l);
+      lbl.style.color = labelColor(l);
+      lbl.textContent = l;
+      titleRow.appendChild(lbl);
+    });
 
     if (openIsoTabId) {
       const isoPill = document.createElement('span');
@@ -565,6 +690,22 @@ function renderAccountsList() {
       await loadState();
     });
 
+    // Pin (علاقه‌مندی — همیشه اول لیست)
+    const pinBtn = document.createElement('button');
+    pinBtn.className = 'mini-action' + (acc.pinned ? ' pinned' : '');
+    pinBtn.title = acc.pinned ? 'برداشتن پین' : 'پین‌کردن (همیشه اول لیست)';
+    pinBtn.innerHTML = ic('pin');
+    pinBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await sendMsg({
+        type: 'EDIT_ACCOUNT_META',
+        siteKey: state.siteKey,
+        accountId: acc.id,
+        patch: { pinned: !acc.pinned }
+      });
+      await loadState();
+    });
+
     // Edit
     const editBtn = document.createElement('button');
     editBtn.className = 'mini-action';
@@ -608,6 +749,7 @@ function renderAccountsList() {
 
     actions.appendChild(isoBtn);
     actions.appendChild(updateBtn);
+    actions.appendChild(pinBtn);
     actions.appendChild(skipBtn);
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
@@ -1287,11 +1429,80 @@ els.importFileInput.addEventListener('change', async (e) => {
 function openEditModal(acc) {
   editingAccountId = acc.id;
   editingColor = acc.color || COLORS[0];
+  editingLabels = Array.isArray(acc.labels) ? [...acc.labels] : [];
+  editingPinned = Boolean(acc.pinned);
   els.editNameInput.value = acc.name;
   els.editNoteInput.value = acc.note || '';
+  els.editCustomLabelInput.value = '';
   renderColorSwatches();
+  renderEditLabelPicker();
   els.editModal.classList.remove('hidden');
   els.editNameInput.focus();
+}
+
+function renderEditLabelPicker() {
+  els.editLabelPicker.innerHTML = '';
+
+  const mkChip = (label, selected, color) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'edit-chip' + (selected ? ' selected' : '');
+    chip.innerHTML = `${ic('tag', 'ic ic-xs')}<span></span>`;
+    chip.querySelector('span').textContent = label;
+    if (selected && color) {
+      chip.style.borderColor = color;
+      chip.style.color = color;
+      chip.style.background = color + '22';
+    }
+    chip.addEventListener('click', () => {
+      if (editingLabels.includes(label)) {
+        editingLabels = editingLabels.filter((l) => l !== label);
+      } else if (editingLabels.length < 5) {
+        editingLabels.push(label);
+      } else {
+        showToast('حداکثر ۵ برچسب قابل انتخاب است.', true);
+        return;
+      }
+      renderEditLabelPicker();
+    });
+    return chip;
+  };
+
+  [...LABEL_PRESETS, ...editingLabels.filter((l) => !LABEL_PRESETS.includes(l))].forEach((l) => {
+    els.editLabelPicker.appendChild(mkChip(l, editingLabels.includes(l), labelColor(l)));
+  });
+
+  const pinChip = document.createElement('button');
+  pinChip.type = 'button';
+  pinChip.className = 'edit-chip edit-chip-pin' + (editingPinned ? ' selected' : '');
+  pinChip.innerHTML = `${ic('pin', 'ic ic-xs')}<span></span>`;
+  pinChip.querySelector('span').textContent = 'پین‌شده';
+  if (editingPinned) {
+    pinChip.style.borderColor = '#fbbf24';
+    pinChip.style.color = '#fbbf24';
+    pinChip.style.background = 'rgba(251, 191, 36, 0.13)';
+  }
+  pinChip.addEventListener('click', () => {
+    editingPinned = !editingPinned;
+    renderEditLabelPicker();
+  });
+  els.editLabelPicker.appendChild(pinChip);
+}
+
+function addCustomLabel() {
+  const val = els.editCustomLabelInput.value.trim().slice(0, 18);
+  if (!val) return;
+  if (editingLabels.includes(val)) {
+    showToast('این برچسب قبلاً اضافه شده است.', true);
+    return;
+  }
+  if (editingLabels.length >= 5) {
+    showToast('حداکثر ۵ برچسب قابل انتخاب است.', true);
+    return;
+  }
+  editingLabels.push(val);
+  els.editCustomLabelInput.value = '';
+  renderEditLabelPicker();
 }
 
 function renderColorSwatches() {
@@ -1326,13 +1537,63 @@ els.saveEditBtn.addEventListener('click', async () => {
     type: 'EDIT_ACCOUNT_META',
     siteKey: state.siteKey,
     accountId: editingAccountId,
-    patch: { name, note, color: editingColor }
+    patch: { name, note, color: editingColor, labels: [...editingLabels], pinned: editingPinned }
   });
 
   editingAccountId = null;
   els.editModal.classList.add('hidden');
   showToast('مشخصات اکانت ویرایش شد.');
   await loadState();
+});
+
+els.addCustomLabelBtn.addEventListener('click', addCustomLabel);
+els.editCustomLabelInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    addCustomLabel();
+  }
+});
+
+// مرتب‌سازی لیست اکانت‌ها
+els.sortSelect.addEventListener('change', (e) => {
+  listPref.sort = e.target.value || 'recent';
+  saveListPref();
+  renderAccountsList();
+});
+
+// جست‌وجوی سریع (پالت درون‌صفحه‌ای در تب فعلی)
+els.quickSearchBtn.addEventListener('click', async () => {
+  if (!state.tabId) {
+    showToast('ابتدا یک صفحه وب باز کنید.', true);
+    return;
+  }
+  try {
+    await chrome.tabs.sendMessage(state.tabId, { type: 'OPEN_QUICK_SWITCHER' });
+    window.close();
+  } catch {
+    showToast('پالت جست‌وجو در این صفحه فعال نیست (صفحه داخلی مرورگر).', true);
+  }
+});
+
+// اعلان دسکتاپ
+async function loadNotifPref() {
+  try {
+    const res = await sendMsg({ type: 'GET_NOTIF_PREFS' });
+    if (res?.ok) {
+      els.chkDesktopNotif.checked = res.notifPrefs?.enabled !== false;
+    }
+  } catch {}
+}
+
+els.chkDesktopNotif.addEventListener('change', async (e) => {
+  const res = await sendMsg({ type: 'SET_NOTIF_ENABLED', enabled: e.target.checked });
+  if (res?.ok) {
+    showToast(
+      e.target.checked
+        ? 'اعلان دسکتاپ پیام و کد تأیید فعال شد.'
+        : 'اعلان دسکتاپ غیرفعال شد.'
+    );
+  }
 });
 
 loadState();

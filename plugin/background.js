@@ -221,6 +221,8 @@ function summarizeAccount(acc) {
     mailboxId: acc.mailboxId || null,
     color: acc.color || '#6366f1',
     skipped: Boolean(acc.skipped),
+    labels: Array.isArray(acc.labels) ? acc.labels : [],
+    pinned: Boolean(acc.pinned),
     createdAt: acc.createdAt || 0,
     updatedAt: acc.updatedAt || 0,
     lastUsedAt: acc.lastUsedAt || 0,
@@ -2038,6 +2040,189 @@ async function fillValueInTab(tabId, value, fieldKind = 'email') {
 }
 
 // ----------------------------------------------------------------------------
+// Desktop Notifications — پیام جدید / کد تأیید حتی وقتی پاپ‌آپ بسته است
+// ----------------------------------------------------------------------------
+
+const NOTIF_MAX_PER_POLL = 4;
+
+async function getNotifPrefs() {
+  try {
+    const data = await chrome.storage.local.get('notifPrefs');
+    return { enabled: data.notifPrefs?.enabled !== false };
+  } catch {
+    return { enabled: true };
+  }
+}
+
+async function saveNotifPrefs(prefs) {
+  await chrome.storage.local.set({ notifPrefs: prefs });
+}
+
+async function showMailNotification(mailbox, message) {
+  const address = mailbox?.address || '';
+  const sender = message.fromName || message.fromAddress || 'فرستنده ناشناس';
+  const subject = message.subject || '(بدون موضوع)';
+
+  let title;
+  let body;
+  if (message.otpCode) {
+    title = `کد تأیید: ${message.otpCode}`;
+    body = `${subject} — ${sender}`;
+  } else {
+    title = 'پیام جدید در صندوق ایمیل';
+    body = `${subject} — ${sender}`;
+  }
+
+  const notifId = `mail_${mailbox.id}_${message.id}_${Date.now()}`;
+  const options = {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icons/icon48.png'),
+    title,
+    message: body,
+    contextMessage: address,
+    priority: 2,
+    requireInteraction: message.otpCode ? true : false
+  };
+
+  try {
+    await chrome.notifications.create(notifId, options);
+  } catch {
+    try {
+      delete options.requireInteraction;
+      await chrome.notifications.create(notifId, options);
+    } catch {}
+  }
+}
+
+async function pollMailboxesForNotifications({ force = false } = {}) {
+  const prefs = await getNotifPrefs();
+  if (!prefs.enabled) return { ok: true, enabled: false, notified: 0 };
+
+  const st = await getMailState();
+  if (!st.mailboxes.length) return { ok: true, notified: 0 };
+
+  let notifiedCount = 0;
+  let stateDirty = false;
+
+  for (const mb of st.mailboxes) {
+    try {
+      // اولین بررسی: وضعیت فعلی را مبنا می‌گیریم تا اعلان قدیمی نفرستیم
+      if (!Array.isArray(mb.notifSeenIds) || !mb.notifInit) {
+        const messages = await listMessagesForMailbox(mb);
+        mb.notifSeenIds = messages.map((m) => String(m.id));
+        mb.notifInit = true;
+        stateDirty = true;
+        continue;
+      }
+
+      const messages = await listMessagesForMailbox(mb);
+      const seen = new Set(mb.notifSeenIds.map(String));
+      const fresh = messages
+        .filter((m) => !seen.has(String(m.id)))
+        .sort((a, b) => normalizeTimestamp(b.createdAt) - normalizeTimestamp(a.createdAt));
+
+      for (const m of fresh) {
+        mb.notifSeenIds.push(String(m.id));
+      }
+      if (mb.notifSeenIds.length > 200) {
+        mb.notifSeenIds = mb.notifSeenIds.slice(-120);
+      }
+
+      if (fresh.length > 0) {
+        stateDirty = true;
+        if (!force) {
+          for (const m of fresh.slice(0, NOTIF_MAX_PER_POLL)) {
+            await showMailNotification(mb, m);
+            notifiedCount++;
+          }
+        }
+      }
+    } catch {
+      // خطای شبکه یا احراز هویت این صندوق — صندوق بعدی
+    }
+  }
+
+  if (stateDirty) {
+    await saveMailState(st);
+  }
+  return { ok: true, notified: notifiedCount };
+}
+
+chrome.notifications?.onClicked.addListener((notifId) => {
+  chrome.notifications.clear(notifId).catch(() => {});
+  // باز کردن پاپ‌آپ افزونه (کروم ۱۲۷+)؛ در غیر این صورت صفحه پاپ‌آپ در تب جدید
+  try {
+    const p = chrome.action.openPopup();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') }).catch(() => {});
+      });
+    }
+  } catch {
+    chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') }).catch(() => {});
+  }
+});
+
+// ----------------------------------------------------------------------------
+// Quick Search — جست‌وجوی سریع اکانت‌ها بین همه سایت‌ها
+// ----------------------------------------------------------------------------
+
+function scoreQuickMatch(acc, q) {
+  const name = (acc.name || '').toLowerCase();
+  const note = (acc.note || '').toLowerCase();
+  const email = (acc.email || '').toLowerCase();
+  const labels = (acc.labels || []).join(' ').toLowerCase();
+  const siteKey = acc.__siteKey || '';
+
+  if (name === q) return 0;
+  if (name.startsWith(q)) return 1;
+  if (name.includes(q)) return 2;
+  if (email.includes(q)) return 3;
+  if (note.includes(q)) return 4;
+  if (labels.includes(q)) return 5;
+  if (siteKey.includes(q)) return 6;
+  return -1;
+}
+
+async function quickSearchAccounts(rawQuery, currentSiteKey) {
+  const q = (rawQuery || '').trim().toLowerCase();
+  const domains = await getAllDomains();
+  const results = [];
+
+  for (const [siteKey, rec] of Object.entries(domains)) {
+    if (!rec || !Array.isArray(rec.accounts)) continue;
+    for (const acc of rec.accounts) {
+      const withSite = {
+        ...summarizeAccount(acc),
+        accountId: acc.id,
+        siteKey,
+        __siteKey: siteKey
+      };
+      if (q) {
+        const score = scoreQuickMatch(withSite, q);
+        if (score < 0) continue;
+        withSite.__score = score;
+      }
+      withSite.isSameSite = siteKey === currentSiteKey;
+      withSite.siteUrl = `https://${siteKey}`;
+      results.push(withSite);
+    }
+  }
+
+  results.sort((a, b) => {
+    if (Boolean(b.pinned) !== Boolean(a.pinned)) return b.pinned ? 1 : -1;
+    if (q && b.__score !== a.__score) return a.__score - b.__score;
+    return (b.lastUsedAt || 0) - (a.lastUsedAt || 0);
+  });
+
+  const sameSite = results.filter((r) => r.isSameSite).slice(0, 12);
+  const otherSites = results.filter((r) => !r.isSameSite).slice(0, 10);
+  for (const r of results) delete r.__score;
+
+  return { sameSite, otherSites };
+}
+
+// ----------------------------------------------------------------------------
 // Message Router
 // ----------------------------------------------------------------------------
 
@@ -2497,10 +2682,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (typeof patch?.skipped === 'boolean') {
             acc.skipped = patch.skipped;
           }
+          if (Array.isArray(patch?.labels)) {
+            acc.labels = patch.labels
+              .map((l) => String(l).trim().slice(0, 18))
+              .filter(Boolean)
+              .slice(0, 5);
+          }
+          if (typeof patch?.pinned === 'boolean') {
+            acc.pinned = patch.pinned;
+          }
 
           await saveDomainRecord(siteKey, record);
           await broadcastWidgetRefresh(siteKey);
           return { ok: true, account: summarizeAccount(acc) };
+        }
+
+        case 'QUICK_SEARCH_ACCOUNTS': {
+          const currentSiteKey = msg.currentSiteKey || '';
+          const { sameSite, otherSites } = await quickSearchAccounts(msg.query, currentSiteKey);
+          return { ok: true, sameSite, otherSites };
+        }
+
+        case 'GET_NOTIF_PREFS': {
+          return { ok: true, notifPrefs: await getNotifPrefs() };
+        }
+
+        case 'SET_NOTIF_ENABLED': {
+          const prefs = await getNotifPrefs();
+          prefs.enabled = msg.enabled !== false;
+          await saveNotifPrefs(prefs);
+          return { ok: true, notifPrefs: prefs };
+        }
+
+        case 'MAIL_POLL_NOW': {
+          return await pollMailboxesForNotifications({ force: Boolean(msg.force) });
         }
 
         case 'DELETE_ACCOUNT': {
@@ -2647,6 +2862,20 @@ chrome.commands.onCommand.addListener(async (command) => {
   });
   if (!activeTab) return;
 
+  if (command === 'quick-switch-search') {
+    // باز کردن پالت جست‌وجوی سریع در همین تب (اگر صفحه پشتیبانی شود)
+    try {
+      await chrome.tabs.sendMessage(activeTab.id, { type: 'OPEN_QUICK_SWITCHER' });
+      return;
+    } catch {}
+    // صفحه داخلی مرورگر: پالت داخل پاپ‌آپ باز می‌شود
+    try {
+      const p = chrome.action.openPopup();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {}
+    return;
+  }
+
   if (command === 'switch-next-account') {
     await performCycleSwitch(activeTab, 1);
   } else if (command === 'switch-prev-account') {
@@ -2674,3 +2903,21 @@ if (chrome.tabs?.onRemoved) {
     cleanupIsolatedTab(tabId);
   });
 }
+
+// ----------------------------------------------------------------------------
+// Notification Polling — چک دوره‌ای همه صندوق‌ها حتی وقتی پاپ‌آپ بسته است
+// ----------------------------------------------------------------------------
+
+const MAIL_NOTIF_ALARM = 'mail-notif-poll';
+const MAIL_NOTIF_BOOT_ALARM = 'mail-notif-boot';
+
+try {
+  chrome.alarms.create(MAIL_NOTIF_ALARM, { periodInMinutes: 1 });
+  chrome.alarms.create(MAIL_NOTIF_BOOT_ALARM, { delayInMinutes: 0.3 });
+} catch {}
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm?.name === MAIL_NOTIF_ALARM || alarm?.name === MAIL_NOTIF_BOOT_ALARM) {
+    pollMailboxesForNotifications().catch(() => {});
+  }
+});

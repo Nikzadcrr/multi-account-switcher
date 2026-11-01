@@ -1647,3 +1647,162 @@ svg.spin {
   word-break: break-word;
   direction: auto;
 }
+
+/* ------------------------------------------------------------------ */
+/* v3.3 — Header actions, quick search, labels, pin & sort             */
+/* ------------------------------------------------------------------ */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+svg.ic-xs {
+  width: 11px;
+  height: 11px;
+}
+
+.list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.input-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.sort-select {
+  flex-shrink: 0;
+  min-height: 38px;
+  min-width: 128px;
+  background: rgba(11, 17, 32, 0.6);
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+.label-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(148, 163, 184, 0.09);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #cbd5e1;
+  border-radius: 99px;
+  padding: 4.5px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.filter-chip:hover {
+  background: rgba(148, 163, 184, 0.2);
+  color: #fff;
+}
+.filter-chip.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.6);
+  color: #c7d2fe;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.22);
+}
+
+.pill-pin {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.pill-label {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.mini-action.pinned {
+  background: rgba(251, 191, 36, 0.16);
+  border-color: rgba(251, 191, 36, 0.55);
+  color: #fbbf24;
+}
+.mini-action.pinned:hover {
+  background: rgba(251, 191, 36, 0.28);
+  border-color: rgba(251, 191, 36, 0.75);
+  color: #fde68a;
+}
+
+/* Edit modal — labels & pin picker */
+.edit-labels-box {
+  background: rgba(148, 163, 184, 0.07);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.edit-labels-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.edit-label-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.edit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(11, 17, 32, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.edit-chip:hover {
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #e2e8f0;
+}
+.edit-chip.selected {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.6);
+  color: #c7d2fe;
+}
+.edit-chip-pin.selected {
+  background: rgba(251, 191, 36, 0.13);
+}
+
+.edit-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.input-sm {
+  min-height: 34px;
+  font-size: 12.5px;
+  flex: 1;
+  min-width: 0;
+}

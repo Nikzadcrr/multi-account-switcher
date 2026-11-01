@@ -24,7 +24,11 @@
     'external-link': '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
     plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
     minus: '<path d="M5 12h14"/>',
-    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+    search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    pin: '<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'
   };
   function wIc(name, cls = 'ic') {
     return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WIDGET_ICONS[name] || ''}</svg>`;
@@ -222,6 +226,9 @@
       .btn-iso:hover {
         background: rgba(6, 182, 212, 0.35);
         color: #fff;
+      }
+      .btn-search {
+        padding: 6px;
       }
       .btn-save {
         background: linear-gradient(135deg, #10b981, #059669);
@@ -624,6 +631,18 @@
     });
     pill.appendChild(openIsoBtn);
 
+    // Quick search palette button
+    const searchBtn = document.createElement('button');
+    searchBtn.className = 'btn btn-iso btn-search';
+    searchBtn.title = 'جست‌وجوی سریع اکانت‌ها (Alt+Shift+F)';
+    searchBtn.innerHTML = wIc('search');
+    searchBtn.addEventListener('click', () => {
+      dropdownOpen = false;
+      render();
+      openQuickSwitcher();
+    });
+    pill.appendChild(searchBtn);
+
     const minBtn = document.createElement('button');
     minBtn.className = 'btn btn-icon';
     minBtn.title = 'کوچک کردن';
@@ -650,10 +669,554 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // Quick Switcher Palette — جست‌وجوی سریع اکانت‌ها (Alt+Shift+F)
+  // ------------------------------------------------------------------
+
+  let qsHost = null;
+  let qsShadow = null;
+  let qsOpen = false;
+  let qsQuery = '';
+  let qsDebounce = null;
+  let qsRows = []; // { accountId, siteKey, siteUrl, isSameSite, name, ... }
+  let qsSelected = 0;
+  let qsSearching = false;
+
+  function currentSiteKeyLocal() {
+    try {
+      if (currentState?.siteKey) return currentState.siteKey;
+      const host = window.location.hostname.toLowerCase().replace(/\.$/, '');
+      const parts = host.split('.');
+      if (parts.length <= 2) return host;
+      return parts.slice(-2).join('.');
+    } catch {
+      return '';
+    }
+  }
+
+  function ensureQuickSwitcherMounted() {
+    if (qsHost && qsShadow) return;
+
+    qsHost = document.createElement('div');
+    qsHost.setAttribute('data-ai-switcher-palette', '1');
+    qsHost.style.all = 'initial';
+    qsHost.style.position = 'fixed';
+    qsHost.style.inset = '0';
+    qsHost.style.zIndex = '2147483647';
+    qsHost.style.display = 'none';
+    qsHost.style.direction = 'rtl';
+
+    qsShadow = qsHost.attachShadow({ mode: 'closed' });
+
+    const style = document.createElement('style');
+    style.textContent = `
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        font-family: Tahoma, "Vazirmatn", "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(2, 6, 23, 0.6);
+        backdrop-filter: blur(5px);
+        -webkit-backdrop-filter: blur(5px);
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 12vh 16px 24px;
+      }
+      .palette {
+        width: min(560px, 96vw);
+        max-height: 72vh;
+        display: flex;
+        flex-direction: column;
+        background: rgba(13, 20, 38, 0.94);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        border-radius: 18px;
+        box-shadow: 0 30px 70px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(99, 102, 241, 0.14), 0 0 42px rgba(99, 102, 241, 0.16);
+        overflow: hidden;
+        animation: palette-in 0.16s ease-out;
+      }
+      @keyframes palette-in {
+        from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+        to { opacity: 1; transform: none; }
+      }
+      .search-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        background: rgba(148, 163, 184, 0.06);
+      }
+      .search-row svg {
+        width: 19px;
+        height: 19px;
+        color: #818cf8;
+        flex-shrink: 0;
+      }
+      .search-row input {
+        flex: 1;
+        min-width: 0;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #f1f5f9;
+        font-size: 15.5px;
+        font-weight: 600;
+      }
+      .search-row input::placeholder {
+        color: #64748b;
+        font-weight: 400;
+      }
+      .kbd {
+        color: #94a3b8;
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 7px;
+        padding: 2px 8px;
+        font-size: 11.5px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .results {
+        overflow-y: auto;
+        padding: 8px;
+        flex: 1;
+      }
+      .results::-webkit-scrollbar { width: 7px; }
+      .results::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 99px; }
+      .section-title {
+        color: #64748b;
+        font-size: 11.5px;
+        font-weight: 700;
+        padding: 8px 10px 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .section-title svg { width: 12px; height: 12px; }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        cursor: pointer;
+        border: 1px solid transparent;
+        color: #cbd5e1;
+      }
+      .row.sel {
+        background: rgba(99, 102, 241, 0.2);
+        border-color: rgba(99, 102, 241, 0.5);
+        color: #fff;
+      }
+      .row .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 8px currentColor;
+      }
+      .row-main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .row-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        font-weight: 700;
+        overflow: hidden;
+      }
+      .row-name svg.pin-ic {
+        width: 12px;
+        height: 12px;
+        color: #fbbf24;
+        flex-shrink: 0;
+      }
+      .row-name .nm {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row-sub {
+        font-size: 12px;
+        color: #94a3b8;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .lbl {
+        display: inline-flex;
+        align-items: center;
+        font-size: 10.5px;
+        font-weight: 700;
+        padding: 1px 7px;
+        border-radius: 99px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        color: #cbd5e1;
+        background: rgba(148, 163, 184, 0.1);
+        flex-shrink: 0;
+      }
+      .lbl-کاری, .lbl-work { border-color: rgba(99, 102, 241, 0.6); color: #a5b4fc; background: rgba(99, 102, 241, 0.14); }
+      .lbl-شخصی, .lbl-personal { border-color: rgba(16, 185, 129, 0.6); color: #6ee7b7; background: rgba(16, 185, 129, 0.14); }
+      .lbl-آزمایشی, .lbl-test { border-color: rgba(245, 158, 11, 0.6); color: #fcd34d; background: rgba(245, 158, 11, 0.14); }
+      .site-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: #67e8f9;
+        direction: ltr;
+        flex-shrink: 0;
+      }
+      .site-chip svg { width: 11px; height: 11px; }
+      .row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+      .act {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 10px;
+        border: none;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 700;
+        padding: 7px 11px;
+        color: #fff;
+        transition: filter 0.15s, transform 0.1s;
+      }
+      .act svg { width: 13px; height: 13px; }
+      .act:active { transform: scale(0.95); }
+      .act-switch {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.85), rgba(6, 182, 212, 0.85));
+        box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
+      }
+      .act-tab {
+        background: rgba(6, 182, 212, 0.16);
+        border: 1px solid rgba(6, 182, 212, 0.5);
+        color: #67e8f9;
+      }
+      .act:hover { filter: brightness(1.15); }
+      .empty {
+        padding: 26px 16px;
+        text-align: center;
+        color: #64748b;
+        font-size: 13.5px;
+      }
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 10px 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.18);
+        background: rgba(148, 163, 184, 0.05);
+        color: #94a3b8;
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+      .footer b { color: #cbd5e1; font-weight: 700; }
+    `;
+    qsShadow.appendChild(style);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'backdrop';
+    backdrop.addEventListener('mousedown', (e) => {
+      if (e.target === backdrop) closeQuickSwitcher();
+    });
+    qsShadow.appendChild(backdrop);
+
+    (document.body || document.documentElement).appendChild(qsHost);
+  }
+
+  function closeQuickSwitcher() {
+    qsOpen = false;
+    if (qsHost) qsHost.style.display = 'none';
+    clearTimeout(qsDebounce);
+  }
+
+  function buildRow(item, idx) {
+    const row = document.createElement('div');
+    row.className = 'row' + (idx === qsSelected ? ' sel' : '');
+    row.dataset.idx = String(idx);
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = item.color || '#6366f1';
+    dot.style.color = item.color || '#6366f1';
+    row.appendChild(dot);
+
+    const main = document.createElement('div');
+    main.className = 'row-main';
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'row-name';
+    if (item.pinned) {
+      const pin = document.createElement('span');
+      pin.innerHTML = wIc('pin', 'pin-ic');
+      nameRow.appendChild(pin);
+    }
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = item.name;
+    nameRow.appendChild(nm);
+    (item.labels || []).slice(0, 3).forEach((l) => {
+      const chip = document.createElement('span');
+      chip.className = 'lbl';
+      chip.textContent = l;
+      nameRow.appendChild(chip);
+    });
+
+    const sub = document.createElement('div');
+    sub.className = 'row-sub';
+    sub.textContent = item.note || item.email || item.siteKey || '';
+
+    main.appendChild(nameRow);
+    main.appendChild(sub);
+    row.appendChild(main);
+
+    if (!item.isSameSite) {
+      const siteChip = document.createElement('span');
+      siteChip.className = 'site-chip';
+      siteChip.innerHTML = `${wIc('globe')}<span></span>`;
+      siteChip.querySelector('span').textContent = item.siteKey;
+      row.appendChild(siteChip);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    if (item.isSameSite) {
+      const swBtn = document.createElement('button');
+      swBtn.className = 'act act-switch';
+      swBtn.innerHTML = `${wIc('zap')}<span>سوییچ</span>`;
+      swBtn.title = 'سوییچ در همین تب';
+      swBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        runRowPrimary(item);
+      });
+      actions.appendChild(swBtn);
+    }
+
+    const tabBtn = document.createElement('button');
+    tabBtn.className = 'act act-tab';
+    tabBtn.innerHTML = `${wIc('external-link')}<span>تب جدید</span>`;
+    tabBtn.title = 'باز کردن در تب ایزوله همزمان';
+    tabBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      runRowNewTab(item);
+      closeQuickSwitcher();
+    });
+    actions.appendChild(tabBtn);
+
+    row.appendChild(actions);
+
+    row.addEventListener('mouseenter', () => {
+      qsSelected = idx;
+      highlightRows();
+    });
+    row.addEventListener('click', () => {
+      runRowPrimary(item);
+    });
+
+    return row;
+  }
+
+  function highlightRows() {
+    if (!qsShadow) return;
+    qsShadow.querySelectorAll('.row').forEach((el) => {
+      el.classList.toggle('sel', Number(el.dataset.idx) === qsSelected);
+    });
+    const sel = qsShadow.querySelector(`.row[data-idx="${qsSelected}"]`);
+    sel?.scrollIntoView({ block: 'nearest' });
+  }
+
+  function runRowPrimary(item) {
+    closeQuickSwitcher();
+    if (item.isSameSite) {
+      sendMsg({ type: 'SWITCH_TO_ACCOUNT', accountId: item.accountId });
+    } else {
+      sendMsg({
+        type: 'OPEN_ISOLATED_TAB',
+        url: item.siteUrl,
+        accountId: item.accountId,
+        focusIfOpen: true
+      });
+    }
+  }
+
+  function runRowNewTab(item) {
+    sendMsg({
+      type: 'OPEN_ISOLATED_TAB',
+      url: item.isSameSite ? window.location.href : item.siteUrl,
+      accountId: item.accountId,
+      focusIfOpen: true
+    });
+  }
+
+  function renderQuickResults(data) {
+    if (!qsShadow || !qsOpen) return;
+    const results = qsShadow.querySelector('.results');
+    if (!results) return;
+    results.innerHTML = '';
+
+    const sameSite = data?.sameSite || [];
+    const otherSites = data?.otherSites || [];
+    qsRows = [];
+    sameSite.forEach((r) => qsRows.push(r));
+    otherSites.forEach((r) => qsRows.push(r));
+
+    if (qsSelected >= qsRows.length) qsSelected = 0;
+
+    if (!qsRows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = qsQuery
+        ? 'اکانتی با این نام پیدا نشد.'
+        : 'هنوز اکانتی ذخیره نشده است.';
+      results.appendChild(empty);
+      return;
+    }
+
+    const mkTitle = (icon, text) => {
+      const t = document.createElement('div');
+      t.className = 'section-title';
+      t.innerHTML = `${wIc(icon)}<span>${text}</span>`;
+      results.appendChild(t);
+    };
+
+    if (sameSite.length) {
+      mkTitle('zap', 'همین سایت — سوییچ فوری');
+      sameSite.forEach((item) => {
+        results.appendChild(buildRow(item, qsRows.indexOf(item)));
+      });
+    }
+    if (otherSites.length) {
+      mkTitle('globe', 'سایت‌های دیگر — باز کردن در تب ایزوله');
+      otherSites.forEach((item) => {
+        results.appendChild(buildRow(item, qsRows.indexOf(item)));
+      });
+    }
+  }
+
+  async function searchQuickAccounts() {
+    qsSearching = true;
+    const res = await sendMsg({
+      type: 'QUICK_SEARCH_ACCOUNTS',
+      query: qsQuery,
+      currentSiteKey: currentSiteKeyLocal()
+    });
+    qsSearching = false;
+    if (res?.ok) {
+      renderQuickResults(res);
+    }
+  }
+
+  function openQuickSwitcher() {
+    ensureQuickSwitcherMounted();
+    qsOpen = true;
+    qsQuery = '';
+    qsSelected = 0;
+    qsHost.style.display = 'block';
+
+    const backdrop = qsShadow.querySelector('.backdrop');
+    backdrop.innerHTML = '';
+
+    const palette = document.createElement('div');
+    palette.className = 'palette';
+
+    const searchRow = document.createElement('div');
+    searchRow.className = 'search-row';
+    const sIcon = document.createElement('span');
+    sIcon.innerHTML = wIc('search');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'qs-input';
+    input.placeholder = 'نام اکانت را بنویسید...';
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('spellcheck', 'false');
+    const kbd = document.createElement('span');
+    kbd.className = 'kbd';
+    kbd.textContent = 'Esc بستن';
+    searchRow.appendChild(sIcon);
+    searchRow.appendChild(input);
+    searchRow.appendChild(kbd);
+
+    const results = document.createElement('div');
+    results.className = 'results';
+    results.id = 'qs-results';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'در حال دریافت اکانت‌ها...';
+    results.appendChild(empty);
+
+    const footer = document.createElement('div');
+    footer.className = 'footer';
+    footer.innerHTML =
+      '<span><b>Enter</b> سوییچ در همین تب</span><span><b>Ctrl+Enter</b> تب جدید ایزوله</span><span><b>↑↓</b> حرکت بین اکانت‌ها</span>';
+
+    palette.appendChild(searchRow);
+    palette.appendChild(results);
+    palette.appendChild(footer);
+    backdrop.appendChild(palette);
+
+    input.addEventListener('input', () => {
+      qsQuery = input.value || '';
+      clearTimeout(qsDebounce);
+      qsDebounce = setTimeout(searchQuickAccounts, 140);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeQuickSwitcher();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (qsRows.length) {
+          qsSelected = (qsSelected + 1) % qsRows.length;
+          highlightRows();
+        }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (qsRows.length) {
+          qsSelected = (qsSelected - 1 + qsRows.length) % qsRows.length;
+          highlightRows();
+        }
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const item = qsRows[qsSelected];
+        if (!item) return;
+        if (e.ctrlKey || e.metaKey) {
+          runRowNewTab(item);
+          closeQuickSwitcher();
+        } else {
+          runRowPrimary(item);
+        }
+      }
+    });
+
+    setTimeout(() => input.focus(), 30);
+    searchQuickAccounts();
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === 'REFRESH_WIDGET') {
       isBusy = false;
       refreshState();
+    } else if (msg?.type === 'OPEN_QUICK_SWITCHER') {
+      if (qsOpen) {
+        closeQuickSwitcher();
+      } else {
+        openQuickSwitcher();
+      }
     }
   });
 
