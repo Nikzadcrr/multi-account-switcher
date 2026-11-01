@@ -432,6 +432,16 @@
           </li>
         </ol>
         <div id="gwError" class="gw-error hidden"></div>
+        <div id="gwErrorHint" class="gw-error-hint hidden">
+          <b>اگر پنجرهٔ گوگل خطای <span dir="ltr">Error 400: redirect_uri_mismatch</span> نشان داد:</b>
+          <ol>
+            <li>کنسول گوگل → <span dir="ltr">APIs &amp; Services → Credentials</span> → روی همان OAuth client کلیک کن.</li>
+            <li>نوع <b>Chrome extension</b>: فیلد <span dir="ltr">Application ID</span> باید دقیقاً برابر «Extension ID» همین ویزارد باشد (کپی با دکمهٔ همین مرحله).</li>
+            <li>نوع <b>Web application</b>: در <span dir="ltr">Authorized redirect URIs</span> دقیقاً همان «Redirect URI» همین ویزارد را اضافه کن — با اسلش انتهایی <span dir="ltr">/</span>.</li>
+            <li>نوع <b>Desktop app</b> کار نمی‌کند؛ یک کلاینت جدید از نوع Chrome extension بساز.</li>
+            <li>Save بزن، ۱ تا ۲ دقیقه صبر کن، پنجرهٔ قبلی گوگل را ببند و دوباره «اتصال» را بزن.</li>
+          </ol>
+        </div>
         <div class="modal-actions">
           <button id="gwConnectBtn" class="btn btn-success btn-sm"><span data-icon="shield-check" data-icon-class="ic ic-sm"></span> اتصال و انتخاب حساب گوگل</button>
         </div>

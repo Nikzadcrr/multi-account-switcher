@@ -259,6 +259,7 @@ const els = {
   gwClientIdInput: document.getElementById('gwClientIdInput'),
   gwConnectBtn: document.getElementById('gwConnectBtn'),
   gwError: document.getElementById('gwError'),
+  gwErrorHint: document.getElementById('gwErrorHint'),
   activeMailMeta: document.getElementById('activeMailMeta'),
   mailCreateCard: document.getElementById('mailCreateCard'),
   closeCreateCardBtn: document.getElementById('closeCreateCardBtn'),
@@ -840,6 +841,7 @@ function fillWizardStaticFields(st) {
 
 function openGmailWizard() {
   els.gwError.classList.add('hidden');
+  els.gwErrorHint.classList.add('hidden');
   fillWizardStaticFields(gmailStatus);
   els.gmailWizardModal.classList.remove('hidden');
 }
@@ -895,12 +897,14 @@ els.gwConnectBtn.addEventListener('click', async () => {
     };
     els.gwError.classList.add('hidden');
     els.gwError.textContent = '';
+    els.gwErrorHint.classList.add('hidden');
     els.gmailWizardModal.classList.add('hidden');
     await renderGmailAliasBox();
     showToast(`جیمیل متصل شد: ${res.email}`);
   } catch (e) {
     els.gwError.textContent = e?.message || 'اتصال ناموفق بود.';
     els.gwError.classList.remove('hidden');
+    els.gwErrorHint.classList.remove('hidden');
   } finally {
     els.gwConnectBtn.disabled = false;
     els.gwConnectBtn.innerHTML = original;
