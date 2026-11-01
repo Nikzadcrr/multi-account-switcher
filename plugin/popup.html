@@ -344,6 +344,37 @@
               <div class="im-gmail-hint">
                 شرط فقط این است: در همین مرورگر داخل Gmail لاگین باشی.
               </div>
+              <div id="gmailAppPwBox" class="hidden">
+                <div class="im-gmail-hint">
+                  <b>روش دوم بدون گوگل‌کلود — رمز برنامه (App Password):</b>
+                  ۱) با دکمهٔ زیر، در گوگل یک رمز ۱۶ حرفی بساز (تأیید دومرحله‌ای باید روشن باشد).
+                  ۲) ایمیل جیمیل و رمز را در کادرها وارد کن.
+                </div>
+                <button id="openAppPwBtn" class="im-btn im-btn-primary">
+                  <span data-icon="external-link"></span>
+                  <span>ساخت رمز برنامه در گوگل</span>
+                </button>
+                <input
+                  type="text"
+                  id="gmailPwEmail"
+                  class="im-input"
+                  placeholder="you@gmail.com"
+                  dir="ltr"
+                  maxlength="60"
+                />
+                <input
+                  type="password"
+                  id="gmailPwPass"
+                  class="im-input"
+                  placeholder="رمز ۱۶ حرفی (xxxx xxxx xxxx xxxx)"
+                  dir="ltr"
+                  maxlength="32"
+                />
+                <button id="gmailPwConnectBtn" class="im-btn im-btn-primary">
+                  <span data-icon="shield-check"></span>
+                  <span>اتصال با رمز برنامه</span>
+                </button>
+              </div>
               <button id="openGmailWizardBtn" class="im-btn im-btn-primary">
                 <span data-icon="link"></span>
                 <span>اتصال دستی با Client ID (روش قبلی)</span>

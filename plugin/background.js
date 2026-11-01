@@ -1802,13 +1802,16 @@ async function disconnectGmail() {
       await chrome.identity.removeCachedAuthToken({ token: oauth.accessToken });
     } catch (_) {}
   }
+  await gmailQuickRemoveCookieRule();
   await saveGmailOAuth({
     clientId: oauth.clientId,
     mode: '',
     email: '',
     accessToken: '',
     tokenExpiresAt: 0,
-    connectedAt: 0
+    connectedAt: 0,
+    appPasswordEmail: '',
+    appPassword: ''
   });
 }
 
@@ -1908,22 +1911,77 @@ function gmailQuickParseFeed(xml) {
   return out;
 }
 
-async function gmailQuickFetchFeed() {
+const GMAIL_COOKIE_RULE_ID = 45450;
+
+// کوکی‌های سشن جیمیل را می‌خوانیم و با DNR مستقیم در هدر Cookie می‌گذاریم
+// (بای‌پس SameSite — علت خطای 401 قبلی)
+async function gmailQuickInstallCookieRule() {
+  const cookies = await chrome.cookies.getAll({ url: 'https://mail.google.com/mail/u/0/' });
+  if (!cookies || !cookies.length) throw new Error('no-gmail-cookies');
+  const cookieStr = cookies
+    .map((c) => `${c.name}=${c.value}`)
+    .join('; ')
+    .slice(0, 3800);
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [GMAIL_COOKIE_RULE_ID],
+    addRules: [
+      {
+        id: GMAIL_COOKIE_RULE_ID,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{ header: 'Cookie', operation: 'set', value: cookieStr }]
+        },
+        condition: {
+          urlFilter: '||mail.google.com/mail/',
+          resourceTypes: ['xmlhttprequest'],
+          initiatorDomains: [chrome.runtime.id]
+        }
+      }
+    ]
+  });
+  return cookies.length;
+}
+
+async function gmailQuickRemoveCookieRule() {
+  try {
+    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [GMAIL_COOKIE_RULE_ID] });
+  } catch (_) {}
+}
+
+async function gmailQuickFetchFeed({ appPasswordEmail = '', appPassword = '' } = {}) {
+  const useBasic = Boolean(appPasswordEmail && appPassword);
+  if (useBasic) {
+    await gmailQuickRemoveCookieRule();
+  } else {
+    try {
+      await gmailQuickInstallCookieRule();
+    } catch (_) {}
+  }
+  const headers = { Accept: 'application/atom+xml, text/xml, */*' };
+  if (useBasic) {
+    headers.Authorization = `Basic ${btoa(`${appPasswordEmail}:${appPassword}`)}`;
+  }
   let lastErr = '';
   for (const url of GMAIL_FEED_URLS) {
     try {
       const res = await fetch(url, {
-        credentials: 'include',
-        headers: { Accept: 'application/atom+xml, text/xml, */*' }
+        credentials: useBasic ? 'omit' : 'include',
+        headers
       });
       const txt = await res.text();
       const head = txt.slice(0, 400).toLowerCase();
       if (res.ok && (head.includes('<?xml') || head.includes('<feed'))) {
         return txt;
       }
-      lastErr = head.includes('<!doctype html') || txt.includes('accounts.google.com')
-        ? 'not-logged-in'
-        : `HTTP ${res.status}`;
+      if (res.status === 401 || res.status === 403) {
+        lastErr = 'FEED_AUTH_401';
+        continue;
+      }
+      lastErr =
+        head.includes('<!doctype html') || txt.includes('accounts.google.com')
+          ? 'not-logged-in'
+          : `HTTP ${res.status}`;
     } catch (e) {
       lastErr = e?.message || 'network';
     }
@@ -1932,7 +1990,7 @@ async function gmailQuickFetchFeed() {
 }
 
 async function connectGmailQuick() {
-  const xml = await gmailQuickFetchFeed();
+  const xml = await gmailQuickFetchFeed({});
   const parsed = gmailQuickParseFeed(xml);
   if (!parsed.email) {
     throw new Error(
@@ -1951,8 +2009,30 @@ async function connectGmailQuick() {
   return { email: parsed.email, count: parsed.messages.length };
 }
 
+async function connectGmailQuickWithPassword(email, appPassword) {
+  const xml = await gmailQuickFetchFeed({ appPasswordEmail: email, appPassword });
+  const parsed = gmailQuickParseFeed(xml);
+  const accountEmail = parsed.email || email;
+  const oauth = await getGmailOAuth();
+  await saveGmailOAuth({
+    ...oauth,
+    mode: 'quick',
+    email: accountEmail,
+    appPasswordEmail: email,
+    appPassword,
+    accessToken: '',
+    tokenExpiresAt: 0,
+    connectedAt: Date.now()
+  });
+  return { email: accountEmail };
+}
+
 async function gmailQuickListMessages() {
-  const xml = await gmailQuickFetchFeed();
+  const oauth = await getGmailOAuth();
+  const xml = await gmailQuickFetchFeed({
+    appPasswordEmail: oauth.appPasswordEmail || '',
+    appPassword: oauth.appPassword || ''
+  });
   const parsed = gmailQuickParseFeed(xml);
   return parsed.messages;
 }
@@ -3087,16 +3167,59 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         case 'GMAIL_CONNECT_QUICK': {
-          const r = await connectGmailQuick();
-          return {
-            ok: true,
-            connected: true,
-            email: r.email,
-            mode: 'quick',
-            clientId: '',
-            extensionId: chrome.runtime.id,
-            redirectUri: gmailRedirectUri()
-          };
+          try {
+            const r = await connectGmailQuick();
+            return {
+              ok: true,
+              connected: true,
+              email: r.email,
+              mode: 'quick',
+              clientId: '',
+              extensionId: chrome.runtime.id,
+              redirectUri: gmailRedirectUri()
+            };
+          } catch (e) {
+            const m = String(e?.message || '');
+            return {
+              ok: false,
+              code: m.includes('FEED_AUTH_401') ? 'FEED_AUTH_401' : '',
+              error: m.includes('FEED_AUTH_401')
+                ? 'گوگل فید سشن مرورگر را نپذیرفت (401). دو راه داری: رمز برنامهٔ ۱۶ رقمی (کادر پایین، بدون گوگل‌کلود) یا روش کامل Client ID.'
+                : m
+            };
+          }
+        }
+
+        case 'GMAIL_CONNECT_QUICK_PW': {
+          try {
+            const email = String(msg.email || '').trim().toLowerCase();
+            const pw = String(msg.appPassword || '').replace(/\s+/g, '');
+            if (!/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(email)) {
+              return { ok: false, error: 'ایمیل جیمیل معتبر نیست.' };
+            }
+            if (pw.length < 8) {
+              return { ok: false, error: 'رمز برنامه را کامل وارد کن (۱۶ حرف).' };
+            }
+            const r = await connectGmailQuickWithPassword(email, pw);
+            return {
+              ok: true,
+              connected: true,
+              email: r.email,
+              mode: 'quick',
+              clientId: '',
+              extensionId: chrome.runtime.id,
+              redirectUri: gmailRedirectUri()
+            };
+          } catch (e) {
+            const m = String(e?.message || '');
+            return {
+              ok: false,
+              code: m.includes('FEED_AUTH_401') ? 'FEED_AUTH_401' : '',
+              error: m.includes('FEED_AUTH_401')
+                ? 'گوگل این ایمیل/رمز برنامه را نپذیرفت (401). مطمئن شو رمز از myaccount.google.com/apppasswords ساخته شده و تأیید دومرحله‌ای روشن است.'
+                : m
+            };
+          }
         }
 
         case 'GMAIL_CONNECT': {

@@ -244,6 +244,11 @@ const els = {
   gmailConnectedBox: document.getElementById('gmailConnectedBox'),
   gmailConnectBox: document.getElementById('gmailConnectBox'),
   gmailQuickConnectBtn: document.getElementById('gmailQuickConnectBtn'),
+  gmailAppPwBox: document.getElementById('gmailAppPwBox'),
+  openAppPwBtn: document.getElementById('openAppPwBtn'),
+  gmailPwEmail: document.getElementById('gmailPwEmail'),
+  gmailPwPass: document.getElementById('gmailPwPass'),
+  gmailPwConnectBtn: document.getElementById('gmailPwConnectBtn'),
   gmailStatusEmail: document.getElementById('gmailStatusEmail'),
   gmailDisconnectBtn: document.getElementById('gmailDisconnectBtn'),
   gmailAliasPreviewLocal: document.getElementById('gmailAliasPreviewLocal'),
@@ -860,6 +865,7 @@ gwOpenTab(els.gwOpenConsoleBtn, 'https://console.cloud.google.com/projectcreate'
 gwOpenTab(els.gwOpenApiBtn, 'https://console.cloud.google.com/apis/library/gmail.googleapis.com');
 gwOpenTab(els.gwOpenTestersBtn, 'https://console.cloud.google.com/auth/audience');
 gwOpenTab(els.gwOpenClientBtn, 'https://console.cloud.google.com/apis/credentials/oauthclient', true);
+gwOpenTab(els.openAppPwBtn, 'https://myaccount.google.com/apppasswords');
 
 function gwOpenTab(btn, url, copyBefore = false) {
   btn.addEventListener('click', async () => {
@@ -938,7 +944,12 @@ els.gmailQuickConnectBtn.addEventListener('click', async () => {
   btn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
   try {
     const res = await sendMsg({ type: 'GMAIL_CONNECT_QUICK' });
-    if (!res?.ok) throw new Error(res?.error || 'اتصال فوری ناموفق بود.');
+    if (!res?.ok) {
+      if (res?.code === 'FEED_AUTH_401') {
+        els.gmailAppPwBox.classList.remove('hidden');
+      }
+      throw new Error(res?.error || 'اتصال فوری ناموفق بود.');
+    }
     gmailStatus = {
       ok: true,
       connected: true,
@@ -952,6 +963,39 @@ els.gmailQuickConnectBtn.addEventListener('click', async () => {
     showToast(`جیمیل متصل شد (حالت سریع): ${res.email}`);
   } catch (e) {
     showToast(e?.message || 'اتصال فوری ناموفق بود.', true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+});
+
+els.gmailPwConnectBtn.addEventListener('click', async () => {
+  const btn = els.gmailPwConnectBtn;
+  const email = els.gmailPwEmail.value.trim();
+  const pw = els.gmailPwPass.value.replace(/\s+/g, '');
+  if (!email || !pw) {
+    showToast('ایمیل جیمیل و رمز برنامه را وارد کن.', true);
+    return;
+  }
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
+  try {
+    const res = await sendMsg({ type: 'GMAIL_CONNECT_QUICK_PW', email, appPassword: pw });
+    if (!res?.ok) throw new Error(res?.error || 'اتصال ناموفق بود.');
+    gmailStatus = {
+      ok: true,
+      connected: true,
+      email: res.email,
+      clientId: '',
+      mode: 'quick',
+      extensionId: chrome.runtime.id || '',
+      redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
+    };
+    await renderGmailAliasBox();
+    showToast(`جیمیل متصل شد (رمز برنامه): ${res.email}`);
+  } catch (e) {
+    showToast(e?.message || 'اتصال ناموفق بود.', true);
   } finally {
     btn.disabled = false;
     btn.innerHTML = original;
