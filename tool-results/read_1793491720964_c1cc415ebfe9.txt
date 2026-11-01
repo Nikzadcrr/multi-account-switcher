@@ -1,0 +1,2002 @@
+     1→// ============================================================================
+     2→// AI Multi-Account Switcher & Simultaneous Container Engine (Manifest V3)
+     3→// ============================================================================
+     4→
+     5→const TWO_PART_TLDS = new Set([
+     6→  'co.uk', 'org.uk', 'ac.uk', 'gov.uk',
+     7→  'com.au', 'net.au', 'org.au',
+     8→  'co.jp', 'ne.jp', 'or.jp',
+     9→  'co.kr', 'or.kr',
+    10→  'com.br', 'org.br',
+    11→  'com.tr', 'org.tr',
+    12→  'co.ir', 'ac.ir', 'gov.ir', 'org.ir', 'id.ir', 'net.ir',
+    13→  'co.in', 'net.in', 'org.in',
+    14→  'com.sg', 'com.hk', 'com.tw', 'co.nz', 'co.za', 'com.mx', 'com.ar'
+    15→]);
+    16→
+    17→const LINKED_AUTH_DOMAINS = {
+    18→  'chatgpt.com': ['chatgpt.com', 'openai.com'],
+    19→  'openai.com': ['openai.com', 'chatgpt.com'],
+    20→  'claude.ai': ['claude.ai', 'anthropic.com']
+    21→};
+    22→
+    23→const ACCOUNT_COLORS = [
+    24→  '#6366f1', '#06b6d4', '#10b981', '#f59e0b',
+    25→  '#ec4899', '#8b5cf6', '#14b8a6', '#f97316',
+    26→  '#3b82f6', '#ef4444'
+    27→];
+    28→
+    29→const DNR_RESOURCE_TYPES = [
+    30→  'main_frame',
+    31→  'sub_frame',
+    32→  'xmlhttprequest',
+    33→  'script',
+    34→  'stylesheet',
+    35→  'image',
+    36→  'font',
+    37→  'media',
+    38→  'websocket',
+    39→  'ping',
+    40→  'other'
+    41→];
+    42→
+    43→const siteLocks = new Map();
+    44→function withSiteLock(siteKey, fn) {
+    45→  const prev = siteLocks.get(siteKey) || Promise.resolve();
+    46→  const next = prev.then(fn, fn);
+    47→  siteLocks.set(siteKey, next.catch(() => {}));
+    48→  return next;
+    49→}
+    50→
+    51→// ----------------------------------------------------------------------------
+    52→// Isolated Tabs Registry (In-Memory + chrome.storage.session persistence)
+    53→// ----------------------------------------------------------------------------
+    54→// Map<tabId: number, { tabId, siteKey, accountId, cookieDomains, ruleIds: number[], booting: boolean }>
+    55→const isolatedTabs = new Map();
+    56→let nextDnrRuleId = 1;
+    57→let sessionHydrated = false;
+    58→
+    59→async function ensureSessionHydrated() {
+    60→  if (sessionHydrated) return;
+    61→  sessionHydrated = true;
+    62→  try {
+    63→    if (chrome.storage?.session) {
+    64→      const data = await chrome.storage.session.get(['isolatedTabsObj', 'nextDnrRuleId']);
+    65→      if (data.isolatedTabsObj && typeof data.isolatedTabsObj === 'object') {
+    66→        for (const [k, v] of Object.entries(data.isolatedTabsObj)) {
+    67→          isolatedTabs.set(Number(k), v);
+    68→        }
+    69→      }
+    70→      if (typeof data.nextDnrRuleId === 'number' && data.nextDnrRuleId > nextDnrRuleId) {
+    71→        nextDnrRuleId = data.nextDnrRuleId;
+    72→      }
+    73→    }
+    74→    if (chrome.declarativeNetRequest?.getSessionRules) {
+    75→      const existingRules = await chrome.declarativeNetRequest.getSessionRules();
+    76→      for (const r of existingRules) {
+    77→        if (r.id >= nextDnrRuleId) {
+    78→          nextDnrRuleId = r.id + 1;
+    79→        }
+    80→      }
+    81→    }
+    82→  } catch {}
+    83→}
+    84→
+    85→function allocRuleId() {
+    86→  const id = nextDnrRuleId++;
+    87→  if (nextDnrRuleId > 2000000000) nextDnrRuleId = 1000;
+    88→  return id;
+    89→}
+    90→
+    91→async function persistIsolatedSession() {
+    92→  try {
+    93→    if (chrome.storage?.session) {
+    94→      const obj = {};
+    95→      for (const [tid, val] of isolatedTabs.entries()) {
+    96→        obj[tid] = val;
+    97→      }
+    98→      await chrome.storage.session.set({
+    99→        isolatedTabsObj: obj,
+   100→        nextDnrRuleId
+   101→      });
+   102→    }
+   103→  } catch {}
+   104→}
+   105→
+   106→// Kick off hydration on worker startup
+   107→ensureSessionHydrated();
+   108→
+   109→// ----------------------------------------------------------------------------
+   110→// Domain & URL Helpers
+   111→// ----------------------------------------------------------------------------
+   112→
+   113→function isIpOrLocalhost(hostname) {
+   114→  if (hostname === 'localhost' || hostname.endsWith('.localhost')) return true;
+   115→  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return true;
+   116→  if (hostname.startsWith('[') && hostname.endsWith(']')) return true;
+   117→  return false;
+   118→}
+   119→
+   120→function extractBaseDomain(hostname) {
+   121→  const clean = hostname.toLowerCase().replace(/\.$/, '');
+   122→  if (isIpOrLocalhost(clean)) return clean;
+   123→
+   124→  const parts = clean.split('.');
+   125→  if (parts.length <= 2) return clean;
+   126→
+   127→  const lastTwo = parts.slice(-2).join('.');
+   128→  if (TWO_PART_TLDS.has(lastTwo) && parts.length >= 3) {
+   129→    return parts.slice(-3).join('.');
+   130→  }
+   131→  return lastTwo;
+   132→}
+   133→
+   134→function getSiteInfo(urlStr) {
+   135→  if (!urlStr) return { supported: false };
+   136→  try {
+   137→    const url = new URL(urlStr);
+   138→    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+   139→      return { supported: false };
+   140→    }
+   141→    if (
+   142→      url.hostname === 'chromewebstore.google.com' ||
+   143→      url.hostname === 'chrome.google.com'
+   144→    ) {
+   145→      return { supported: false, reason: 'restricted_store' };
+   146→    }
+   147→
+   148→    const baseDomain = extractBaseDomain(url.hostname);
+   149→    const cookieDomains = LINKED_AUTH_DOMAINS[baseDomain] || [baseDomain];
+   150→
+   151→    return {
+   152→      supported: true,
+   153→      url: urlStr,
+   154→      origin: url.origin,
+   155→      hostname: url.hostname,
+   156→      siteKey: baseDomain,
+   157→      baseDomain,
+   158→      cookieDomains,
+   159→      isGoogleUnified: baseDomain === 'google.com'
+   160→    };
+   161→  } catch {
+   162→    return { supported: false };
+   163→  }
+   164→}
+   165→
+   166→// ----------------------------------------------------------------------------
+   167→// Storage Helpers
+   168→// ----------------------------------------------------------------------------
+   169→
+   170→function defaultDomainRecord(siteKey) {
+   171→  return {
+   172→    siteKey,
+   173→    activeAccountId: null,
+   174→    accounts: [],
+   175→    settings: {
+   176→      floatingWidget: true,
+   177→      autoSync: true,
+   178→      includeStorage: true
+   179→    }
+   180→  };
+   181→}
+   182→
+   183→async function getAllDomains() {
+   184→  const data = await chrome.storage.local.get('domains');
+   185→  return data.domains || {};
+   186→}
+   187→
+   188→async function getDomainRecord(siteKey) {
+   189→  const domains = await getAllDomains();
+   190→  if (!domains[siteKey]) {
+   191→    return defaultDomainRecord(siteKey);
+   192→  }
+   193→  const rec = domains[siteKey];
+   194→  rec.settings = {
+   195→    floatingWidget: true,
+   196→    autoSync: true,
+   197→    includeStorage: true,
+   198→    ...(rec.settings || {})
+   199→  };
+   200→  rec.accounts = Array.isArray(rec.accounts) ? rec.accounts : [];
+   201→  return rec;
+   202→}
+   203→
+   204→async function saveDomainRecord(siteKey, record) {
+   205→  const domains = await getAllDomains();
+   206→  domains[siteKey] = record;
+   207→  await chrome.storage.local.set({ domains });
+   208→}
+   209→
+   210→async function getWidgetPos() {
+   211→  const data = await chrome.storage.local.get('widgetPos');
+   212→  return data.widgetPos || { bottom: 20, left: 20, minimized: false };
+   213→}
+   214→
+   215→function summarizeAccount(acc) {
+   216→  return {
+   217→    id: acc.id,
+   218→    name: acc.name,
+   219→    note: acc.note || '',
+   220→    email: acc.email || '',
+   221→    mailboxId: acc.mailboxId || null,
+   222→    color: acc.color || '#6366f1',
+   223→    skipped: Boolean(acc.skipped),
+   224→    createdAt: acc.createdAt || 0,
+   225→    updatedAt: acc.updatedAt || 0,
+   226→    lastUsedAt: acc.lastUsedAt || 0,
+   227→    useCount: acc.useCount || 0,
+   228→    cookieCount: Array.isArray(acc.cookies) ? acc.cookies.length : 0,
+   229→    storageCount:
+   230→      Object.keys(acc.localStorage || {}).length +
+   231→      Object.keys(acc.sessionStorage || {}).length
+   232→  };
+   233→}
+   234→
+   235→function toPersianDigits(num) {
+   236→  const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+   237→  return String(num).replace(/\d/g, (d) => persian[Number(d)]);
+   238→}
+   239→
+   240→// ----------------------------------------------------------------------------
+   241→// Cookie Capture / Clear / Restore (Single-Tab Mode)
+   242→// ----------------------------------------------------------------------------
+   243→
+   244→async function getStoreIdForTab(tabId) {
+   245→  if (!tabId) return undefined;
+   246→  try {
+   247→    const stores = await chrome.cookies.getAllCookieStores();
+   248→    const match = stores.find((s) => Array.isArray(s.tabIds) && s.tabIds.includes(tabId));
+   249→    return match ? match.id : undefined;
+   250→  } catch {
+   251→    return undefined;
+   252→  }
+   253→}
+   254→
+   255→async function captureCookies(cookieDomains, storeId) {
+   256→  const map = new Map();
+   257→
+   258→  for (const domain of cookieDomains) {
+   259→    const baseQuery = { domain };
+   260→    if (storeId) baseQuery.storeId = storeId;
+   261→
+   262→    try {
+   263→      const list = await chrome.cookies.getAll(baseQuery);
+   264→      for (const c of list) {
+   265→        const key = `${c.name}\0${c.domain}\0${c.path}\0${c.partitionKey?.topLevelSite || ''}`;
+   266→        map.set(key, serializeCookie(c));
+   267→      }
+   268→    } catch {}
+   269→
+   270→    try {
+   271→      const partList = await chrome.cookies.getAll({ ...baseQuery, partitionKey: {} });
+   272→      for (const c of partList) {
+   273→        const key = `${c.name}\0${c.domain}\0${c.path}\0${c.partitionKey?.topLevelSite || ''}`;
+   274→        map.set(key, serializeCookie(c));
+   275→      }
+   276→    } catch {}
+   277→  }
+   278→
+   279→  return Array.from(map.values());
+   280→}
+   281→
+   282→function serializeCookie(c) {
+   283→  const obj = {
+   284→    name: c.name,
+   285→    value: c.value,
+   286→    domain: c.domain,
+   287→    hostOnly: Boolean(c.hostOnly),
+   288→    path: c.path || '/',
+   289→    secure: Boolean(c.secure),
+   290→    httpOnly: Boolean(c.httpOnly),
+   291→    sameSite: c.sameSite || 'unspecified',
+   292→    session: Boolean(c.session)
+   293→  };
+   294→  if (!c.session && typeof c.expirationDate === 'number') {
+   295→    obj.expirationDate = c.expirationDate;
+   296→  }
+   297→  if (c.partitionKey) {
+   298→    obj.partitionKey = c.partitionKey;
+   299→  }
+   300→  return obj;
+   301→}
+   302→
+   303→function buildCookieUrl(c) {
+   304→  const cleanHost = (c.domain || '').startsWith('.') ? c.domain.slice(1) : c.domain;
+   305→  const isHostPrefix = (c.name || '').startsWith('__Host-');
+   306→  const isSecurePrefix = (c.name || '').startsWith('__Secure-') || isHostPrefix;
+   307→  const secure = Boolean(c.secure || isSecurePrefix || c.sameSite === 'no_restriction');
+   308→  const path = isHostPrefix ? '/' : (c.path || '/');
+   309→  return `${secure ? 'https://' : 'http://'}${cleanHost}${path}`;
+   310→}
+   311→
+   312→async function clearCookies(cookieDomains, storeId) {
+   313→  const existing = await captureCookies(cookieDomains, storeId);
+   314→  await Promise.allSettled(
+   315→    existing.map(async (c) => {
+   316→      const url = buildCookieUrl(c);
+   317→      const details = { url, name: c.name };
+   318→      if (storeId) details.storeId = storeId;
+   319→      if (c.partitionKey) details.partitionKey = c.partitionKey;
+   320→      try {
+   321→        await chrome.cookies.remove(details);
+   322→      } catch {
+   323→        const fallback = { url, name: c.name };
+   324→        if (storeId) fallback.storeId = storeId;
+   325→        await chrome.cookies.remove(fallback).catch(() => {});
+   326→      }
+   327→    })
+   328→  );
+   329→}
+   330→
+   331→async function restoreCookies(savedCookies, storeId) {
+   332→  if (!Array.isArray(savedCookies) || savedCookies.length === 0) return;
+   333→
+   334→  const nowSec = Math.floor(Date.now() / 1000);
+   335→
+   336→  await Promise.allSettled(
+   337→    savedCookies.map(async (c) => {
+   338→      const isHostPrefix = (c.name || '').startsWith('__Host-');
+   339→      const isSecurePrefix = (c.name || '').startsWith('__Secure-') || isHostPrefix;
+   340→      const secure = Boolean(c.secure || isSecurePrefix || c.sameSite === 'no_restriction');
+   341→      const path = isHostPrefix ? '/' : (c.path || '/');
+   342→      const cleanHost = (c.domain || '').startsWith('.') ? c.domain.slice(1) : c.domain;
+   343→      if (!cleanHost) return;
+   344→
+   345→      const url = `${secure ? 'https://' : 'http://'}${cleanHost}${path}`;
+   346→      const details = {
+   347→        url,
+   348→        name: c.name,
+   349→        value: c.value ?? '',
+   350→        path,
+   351→        secure,
+   352→        httpOnly: Boolean(c.httpOnly)
+   353→      };
+   354→
+   355→      if (!c.hostOnly && !isHostPrefix && c.domain) {
+   356→        details.domain = c.domain;
+   357→      }
+   358→      if (c.sameSite && c.sameSite !== 'unspecified') {
+   359→        details.sameSite = c.sameSite;
+   360→      }
+   361→      if (!c.session && typeof c.expirationDate === 'number') {
+   362→        details.expirationDate =
+   363→          c.expirationDate > nowSec ? c.expirationDate : nowSec + 86400 * 14;
+   364→      }
+   365→      if (storeId) {
+   366→        details.storeId = storeId;
+   367→      }
+   368→      if (c.partitionKey) {
+   369→        details.partitionKey = c.partitionKey;
+   370→      }
+   371→
+   372→      try {
+   373→        await chrome.cookies.set(details);
+   374→      } catch {
+   375→        if (details.partitionKey) {
+   376→          delete details.partitionKey;
+   377→          await chrome.cookies.set(details).catch(() => {});
+   378→        }
+   379→      }
+   380→    })
+   381→  );
+   382→}
+   383→
+   384→// ----------------------------------------------------------------------------
+   385→// Simultaneous Multi-Tab Container Engine (DNR + Set-Cookie Sync + Preload)
+   386→// ----------------------------------------------------------------------------
+   387→
+   388→function buildCookieHeaderForDomain(savedCookies, domain) {
+   389→  const pairs = new Map();
+   390→  for (const c of savedCookies || []) {
+   391→    if (!c || !c.name) continue;
+   392→    const clean = (c.domain || '').replace(/^\./, '').toLowerCase();
+   393→    if (clean === domain || clean.endsWith('.' + domain)) {
+   394→      // Keep first or root-path cookie
+   395→      if (!pairs.has(c.name) || c.path === '/') {
+   396→        pairs.set(c.name, c.value ?? '');
+   397→      }
+   398→    }
+   399→  }
+   400→  const list = [];
+   401→  for (const [k, v] of pairs.entries()) {
+   402→    list.push(`${k}=${v}`);
+   403→  }
+   404→  return list.join('; ');
+   405→}
+   406→
+   407→function buildDnrCookieRulesForTab(tabId, cookieDomains, savedCookies) {
+   408→  const rules = [];
+   409→  for (const domain of cookieDomains) {
+   410→    const cookieStr = buildCookieHeaderForDomain(savedCookies, domain);
+   411→    const reqHeaderOp = cookieStr
+   412→      ? { header: 'cookie', operation: 'set', value: cookieStr }
+   413→      : { header: 'cookie', operation: 'remove' };
+   414→
+   415→    const condition = {
+   416→      tabIds: [tabId],
+   417→      resourceTypes: DNR_RESOURCE_TYPES
+   418→    };
+   419→    if (isIpOrLocalhost(domain)) {
+   420→      condition.urlFilter = `||${domain}`;
+   421→    } else {
+   422→      condition.requestDomains = [domain];
+   423→    }
+   424→
+   425→    rules.push({
+   426→      id: allocRuleId(),
+   427→      priority: 100,
+   428→      action: {
+   429→        type: 'modifyHeaders',
+   430→        requestHeaders: [reqHeaderOp],
+   431→        responseHeaders: [{ header: 'set-cookie', operation: 'remove' }]
+   432→      },
+   433→      condition
+   434→    });
+   435→  }
+   436→  return rules;
+   437→}
+   438→
+   439→async function refreshIsolatedTabDnrRules(tabId, account) {
+   440→  await ensureSessionHydrated();
+   441→  const iso = isolatedTabs.get(tabId);
+   442→  if (!iso || !chrome.declarativeNetRequest) return;
+   443→
+   444→  const oldIds = iso.ruleIds || [];
+   445→  const newRules = buildDnrCookieRulesForTab(
+   446→    tabId,
+   447→    iso.cookieDomains,
+   448→    account.cookies || []
+   449→  );
+   450→  iso.ruleIds = newRules.map((r) => r.id);
+   451→
+   452→  await chrome.declarativeNetRequest.updateSessionRules({
+   453→    removeRuleIds: oldIds,
+   454→    addRules: newRules
+   455→  });
+   456→  await persistIsolatedSession();
+   457→}
+   458→
+   459→async function cleanupIsolatedTab(tabId) {
+   460→  await ensureSessionHydrated();
+   461→  const iso = isolatedTabs.get(tabId);
+   462→  if (!iso) return;
+   463→  isolatedTabs.delete(tabId);
+   464→
+   465→  if (iso.ruleIds?.length && chrome.declarativeNetRequest) {
+   466→    await chrome.declarativeNetRequest
+   467→      .updateSessionRules({ removeRuleIds: iso.ruleIds })
+   468→      .catch(() => {});
+   469→  }
+   470→  await persistIsolatedSession();
+   471→}
+   472→
+   473→function waitForTabComplete(tabId, timeoutMs = 10000) {
+   474→  return new Promise((resolve) => {
+   475→    let done = false;
+   476→    const finish = () => {
+   477→      if (done) return;
+   478→      done = true;
+   479→      chrome.tabs.onUpdated.removeListener(listener);
+   480→      clearTimeout(timer);
+   481→      resolve();
+   482→    };
+   483→    const listener = (tid, info) => {
+   484→      if (tid === tabId && info.status === 'complete') {
+   485→        finish();
+   486→      }
+   487→    };
+   488→    const timer = setTimeout(finish, timeoutMs);
+   489→    chrome.tabs.onUpdated.addListener(listener);
+   490→  });
+   491→}
+   492→
+   493→async function openAccountInIsolatedTab(targetUrl, siteKey, accountId, makeActive = true) {
+   494→  await ensureSessionHydrated();
+   495→  const siteInfo = getSiteInfo(targetUrl);
+   496→  if (!siteInfo.supported) {
+   497→    return { ok: false, error: 'آدرس سایت برای تب مجزا معتبر نیست.' };
+   498→  }
+   499→
+   500→  const record = await getDomainRecord(siteKey || siteInfo.siteKey);
+   501→  const accIdx = record.accounts.findIndex((a) => a.id === accountId);
+   502→  if (accIdx === -1) {
+   503→    return { ok: false, error: 'اکانت مورد نظر پیدا نشد.' };
+   504→  }
+   505→  const account = record.accounts[accIdx];
+   506→
+   507→  // 1. Create blank tab first so we have tab.id BEFORE any network request happens
+   508→  const tab = await chrome.tabs.create({ url: 'about:blank', active: Boolean(makeActive) });
+   509→  const cookieRules = buildDnrCookieRulesForTab(
+   510→    tab.id,
+   511→    siteInfo.cookieDomains,
+   512→    account.cookies || []
+   513→  );
+   514→  const bootCspRuleId = allocRuleId();
+   515→
+   516→  const bootRule = {
+   517→    id: bootCspRuleId,
+   518→    priority: 250,
+   519→    action: {
+   520→      type: 'modifyHeaders',
+   521→      responseHeaders: [
+   522→        {
+   523→          header: 'content-security-policy',
+   524→          operation: 'set',
+   525→          value: "script-src 'none'"
+   526→        }
+   527→      ]
+   528→    },
+   529→    condition: {
+   530→      tabIds: [tab.id],
+   531→      resourceTypes: ['main_frame']
+   532→    }
+   533→  };
+   534→
+   535→  isolatedTabs.set(tab.id, {
+   536→    tabId: tab.id,
+   537→    siteKey: record.siteKey,
+   538→    accountId: account.id,
+   539→    cookieDomains: siteInfo.cookieDomains,
+   540→    ruleIds: cookieRules.map((r) => r.id),
+   541→    booting: true
+   542→  });
+   543→  await persistIsolatedSession();
+   544→
+   545→  await chrome.declarativeNetRequest.updateSessionRules({
+   546→    addRules: [...cookieRules, bootRule]
+   547→  });
+   548→
+   549→  // 2. Navigate once with page scripts blocked to seed per-tab sessionStorage on exact origin
+   550→  const completePromise = waitForTabComplete(tab.id, 9000);
+   551→  await chrome.tabs.update(tab.id, { url: targetUrl });
+   552→  await completePromise;
+   553→
+   554→  // Prepare non-HttpOnly cookies map for document.cookie virtualization
+   555→  const jsCookies = {};
+   556→  for (const c of account.cookies || []) {
+   557→    if (c && !c.httpOnly && c.name) {
+   558→      jsCookies[c.name] = c.value ?? '';
+   559→    }
+   560→  }
+   561→
+   562→  const bootPayload = {
+   563→    siteKey: record.siteKey,
+   564→    accountId: account.id,
+   565→    accountName: account.name,
+   566→    shortBadge: toPersianDigits(accIdx + 1),
+   567→    color: account.color || '#06b6d4',
+   568→    localStorage: account.localStorage || {},
+   569→    sessionStorage: account.sessionStorage || {},
+   570→    jsCookies
+   571→  };
+   572→
+   573→  await chrome.scripting
+   574→    .executeScript({
+   575→      target: { tabId: tab.id },
+   576→      func: (payload) => {
+   577→        try {
+   578→          window.sessionStorage.setItem('__AI_SWITCHER_ISO__', JSON.stringify(payload));
+   579→        } catch {}
+   580→      },
+   581→      args: [bootPayload]
+   582→    })
+   583→    .catch(() => {});
+   584→
+   585→  // 3. Remove temporary CSP script-blocker and reload tab for real execution!
+   586→  await chrome.declarativeNetRequest
+   587→    .updateSessionRules({ removeRuleIds: [bootCspRuleId] })
+   588→    .catch(() => {});
+   589→
+   590→  const isoEntry = isolatedTabs.get(tab.id);
+   591→  if (isoEntry) {
+   592→    isoEntry.booting = false;
+   593→    await persistIsolatedSession();
+   594→  }
+   595→
+   596→  // Update usage stats
+   597→  await withSiteLock(record.siteKey, async () => {
+   598→    const freshRec = await getDomainRecord(record.siteKey);
+   599→    const targetAcc = freshRec.accounts.find((a) => a.id === account.id);
+   600→    if (targetAcc) {
+   601→      targetAcc.lastUsedAt = Date.now();
+   602→      targetAcc.useCount = (targetAcc.useCount || 0) + 1;
+   603→      await saveDomainRecord(record.siteKey, freshRec);
+   604→    }
+   605→  });
+   606→
+   607→  await updateBadgeForTab(tab.id, targetUrl);
+   608→  await chrome.tabs.reload(tab.id);
+   609→
+   610→  return {
+   611→    ok: true,
+   612→    tabId: tab.id,
+   613→    accountId: account.id,
+   614→    accountName: account.name
+   615→  };
+   616→}
+   617→
+   618→// Observe Set-Cookie headers on Isolated Tabs so rotated tokens stay fresh!
+   619→const pendingCookieSaves = new Map();
+   620→
+   621→function parseSetCookieHeader(rawHeader, fallbackHost) {
+   622→  if (!rawHeader || typeof rawHeader !== 'string') return null;
+   623→  const parts = rawHeader.split(';').map((s) => s.trim());
+   624→  const first = parts[0] || '';
+   625→  const eq = first.indexOf('=');
+   626→  if (eq <= 0) return null;
+   627→
+   628→  const name = first.slice(0, eq).trim();
+   629→  const value = first.slice(eq + 1);
+   630→  let domain = fallbackHost;
+   631→  let hostOnly = true;
+   632→  let path = '/';
+   633→  let secure = true;
+   634→  let httpOnly = false;
+   635→  let expired = false;
+   636→  let expirationDate;
+   637→
+   638→  for (let i = 1; i < parts.length; i++) {
+   639→    const seg = parts[i];
+   640→    const low = seg.toLowerCase();
+   641→    if (low === 'httponly') {
+   642→      httpOnly = true;
+   643→    } else if (low === 'secure') {
+   644→      secure = true;
+   645→    } else if (low.startsWith('domain=')) {
+   646→      const d = seg.slice(7).trim().toLowerCase();
+   647→      if (d) {
+   648→        domain = d.startsWith('.') ? d : '.' + d;
+   649→        hostOnly = false;
+   650→      }
+   651→    } else if (low.startsWith('path=')) {
+   652→      path = seg.slice(5).trim() || '/';
+   653→    } else if (low.startsWith('max-age=')) {
+   654→      const sec = Number(seg.slice(8).trim());
+   655→      if (!Number.isNaN(sec)) {
+   656→        if (sec <= 0) expired = true;
+   657→        else expirationDate = Math.floor(Date.now() / 1000) + sec;
+   658→      }
+   659→    } else if (low.startsWith('expires=')) {
+   660→      const ms = Date.parse(seg.slice(8).trim());
+   661→      if (!Number.isNaN(ms)) {
+   662→        if (ms <= Date.now()) expired = true;
+   663→        else expirationDate = Math.floor(ms / 1000);
+   664→      }
+   665→    }
+   666→  }
+   667→
+   668→  return {
+   669→    name,
+   670→    value,
+   671→    domain,
+   672→    hostOnly,
+   673→    path,
+   674→    secure,
+   675→    httpOnly,
+   676→    sameSite: 'lax',
+   677→    session: !expirationDate,
+   678→    ...(expirationDate ? { expirationDate } : {}),
+   679→    expired
+   680→  };
+   681→}
+   682→
+   683→if (chrome.webRequest?.onHeadersReceived) {
+   684→  chrome.webRequest.onHeadersReceived.addListener(
+   685→    (details) => {
+   686→      if (details.tabId < 0) return;
+   687→      const iso = isolatedTabs.get(details.tabId);
+   688→      if (!iso || iso.booting) return;
+   689→
+   690→      const setCookieHeaders = (details.responseHeaders || []).filter(
+   691→        (h) => h.name && h.name.toLowerCase() === 'set-cookie' && h.value
+   692→      );
+   693→      if (setCookieHeaders.length === 0) return;
+   694→
+   695→      let reqHost = iso.siteKey;
+   696→      try {
+   697→        reqHost = new URL(details.url).hostname.toLowerCase();
+   698→      } catch {}
+   699→
+   700→      const parsedList = setCookieHeaders
+   701→        .map((h) => parseSetCookieHeader(h.value, reqHost))
+   702→        .filter(Boolean);
+   703→      if (parsedList.length === 0) return;
+   704→
+   705→      // Queue async update for this isolated account
+   706→      const key = `${details.tabId}:${iso.accountId}`;
+   707→      const existing = pendingCookieSaves.get(key) || [];
+   708→      existing.push(...parsedList);
+   709→      pendingCookieSaves.set(key, existing);
+   710→
+   711→      setTimeout(() => {
+   712→        const batch = pendingCookieSaves.get(key);
+   713→        if (!batch || batch.length === 0) return;
+   714→        pendingCookieSaves.delete(key);
+   715→
+   716→        withSiteLock(iso.siteKey, async () => {
+   717→          const rec = await getDomainRecord(iso.siteKey);
+   718→          const acc = rec.accounts.find((a) => a.id === iso.accountId);
+   719→          if (!acc) return;
+   720→
+   721→          const cookies = Array.isArray(acc.cookies) ? [...acc.cookies] : [];
+   722→          for (const item of batch) {
+   723→            const idx = cookies.findIndex(
+   724→              (c) =>
+   725→                c.name === item.name &&
+   726→                c.domain.replace(/^\./, '') === item.domain.replace(/^\./, '')
+   727→            );
+   728→            if (item.expired) {
+   729→              if (idx >= 0) cookies.splice(idx, 1);
+   730→            } else {
+   731→              const cleanObj = { ...item };
+   732→              delete cleanObj.expired;
+   733→              if (idx >= 0) cookies[idx] = { ...cookies[idx], ...cleanObj };
+   734→              else cookies.push(cleanObj);
+   735→            }
+   736→          }
+   737→
+   738→          acc.cookies = cookies;
+   739→          acc.updatedAt = Date.now();
+   740→          await saveDomainRecord(iso.siteKey, rec);
+   741→          await refreshIsolatedTabDnrRules(details.tabId, acc);
+   742→        });
+   743→      }, 250);
+   744→    },
+   745→    { urls: ['<all_urls>'] },
+   746→    ['responseHeaders', 'extraHeaders']
+   747→  );
+   748→}
+   749→
+   750→// ----------------------------------------------------------------------------
+   751→// Tab Web Storage (Single-Tab Mode)
+   752→// ----------------------------------------------------------------------------
+   753→
+   754→async function captureTabStorage(tabId) {
+   755→  if (!tabId) {
+   756→    return { localStorage: {}, sessionStorage: {}, indexedDB: {} };
+   757→  }
+   758→  try {
+   759→    const results = await chrome.scripting.executeScript({
+   760→      target: { tabId },
+   761→      func: async () => {
+   762→        const MAX_ITEM_LEN = 512 * 1024;
+   763→        const ls = {};
+   764→        const ss = {};
+   765→
+   766→        try {
+   767→          for (let i = 0; i < window.localStorage.length; i++) {
+   768→            const k = window.localStorage.key(i);
+   769→            if (k !== null && k !== '__AI_SWITCHER_ISO__') {
+   770→              const v = window.localStorage.getItem(k);
+   771→              if (typeof v === 'string' && v.length <= MAX_ITEM_LEN) {
+   772→                ls[k] = v;
+   773→              }
+   774→            }
+   775→          }
+   776→        } catch {}
+   777→
+   778→        try {
+   779→          for (let i = 0; i < window.sessionStorage.length; i++) {
+   780→            const k = window.sessionStorage.key(i);
+   781→            if (k !== null && k !== '__AI_SWITCHER_ISO__') {
+   782→              const v = window.sessionStorage.getItem(k);
+   783→              if (typeof v === 'string' && v.length <= MAX_ITEM_LEN) {
+   784→                ss[k] = v;
+   785→              }
+   786→            }
+   787→          }
+   788→        } catch {}
+   789→
+   790→        const idbDump = {};
+   791→        try {
+   792→          if (window.indexedDB && typeof window.indexedDB.databases === 'function') {
+   793→            const captureIdb = async () => {
+   794→              const dbs = await window.indexedDB.databases();
+   795→              const authPattern = /firebase|auth|session|token|supabase|clerk|keyval|user/i;
+   796→              for (const info of dbs) {
+   797→                if (!info.name || !authPattern.test(info.name)) continue;
+   798→                await new Promise((resolve) => {
+   799→                  let settled = false;
+   800→                  const done = () => {
+   801→                    if (!settled) {
+   802→                      settled = true;
+   803→                      resolve();
+   804→                    }
+   805→                  };
+   806→                  const timer = setTimeout(done, 400);
+   807→                  try {
+   808→                    const req = window.indexedDB.open(info.name);
+   809→                    req.onerror = () => {
+   810→                      clearTimeout(timer);
+   811→                      done();
+   812→                    };
+   813→                    req.onsuccess = () => {
+   814→                      const db = req.result;
+   815→                      const storeNames = Array.from(db.objectStoreNames || []);
+   816→                      if (storeNames.length === 0) {
+   817→                        db.close();
+   818→                        clearTimeout(timer);
+   819→                        done();
+   820→                        return;
+   821→                      }
+   822→                      const dbRecord = {};
+   823→                      try {
+   824→                        const tx = db.transaction(storeNames, 'readonly');
+   825→                        let pending = storeNames.length;
+   826→                        for (const sName of storeNames) {
+   827→                          const store = tx.objectStore(sName);
+   828→                          const usesInlineKey = store.keyPath !== null;
+   829→                          const valReq = store.getAll();
+   830→                          const keyReq = store.getAllKeys();
+   831→                          let vals = null;
+   832→                          let keys = null;
+   833→                          const checkStoreDone = () => {
+   834→                            if (vals !== null && keys !== null) {
+   835→                              try {
+   836→                                const jsonSize = JSON.stringify(vals).length;
+   837→                                if (jsonSize <= 256 * 1024) {
+   838→                                  dbRecord[sName] = {
+   839→                                    usesInlineKey,
+   840→                                    entries: vals.map((v, idx) => ({
+   841→                                      key: keys[idx],
+   842→                                      value: v
+   843→                                    }))
+   844→                                  };
+   845→                                }
+   846→                              } catch {}
+   847→                              pending--;
+   848→                              if (pending <= 0) {
+   849→                                idbDump[info.name] = dbRecord;
+   850→                                db.close();
+   851→                                clearTimeout(timer);
+   852→                                done();
+   853→                              }
+   854→                            }
+   855→                          };
+   856→                          valReq.onsuccess = () => {
+   857→                            vals = valReq.result || [];
+   858→                            checkStoreDone();
+   859→                          };
+   860→                          keyReq.onsuccess = () => {
+   861→                            keys = keyReq.result || [];
+   862→                            checkStoreDone();
+   863→                          };
+   864→                          valReq.onerror = keyReq.onerror = () => {
+   865→                            vals = [];
+   866→                            keys = [];
+   867→                            checkStoreDone();
+   868→                          };
+   869→                        }
+   870→                      } catch {
+   871→                        db.close();
+   872→                        clearTimeout(timer);
+   873→                        done();
+   874→                      }
+   875→                    };
+   876→                  } catch {
+   877→                    clearTimeout(timer);
+   878→                    done();
+   879→                  }
+   880→                });
+   881→              }
+   882→            };
+   883→            await Promise.race([
+   884→              captureIdb(),
+   885→              new Promise((r) => setTimeout(r, 700))
+   886→            ]);
+   887→          }
+   888→        } catch {}
+   889→
+   890→        return { localStorage: ls, sessionStorage: ss, indexedDB: idbDump };
+   891→      }
+   892→    });
+   893→
+   894→    if (results && results[0] && results[0].result) {
+   895→      return results[0].result;
+   896→    }
+   897→  } catch {}
+   898→  return { localStorage: {}, sessionStorage: {}, indexedDB: {} };
+   899→}
+   900→
+   901→async function applyTabStorageAndReload(tabId, storagePayload, includeStorage) {
+   902→  if (!tabId) return;
+   903→
+   904→  if (includeStorage) {
+   905→    try {
+   906→      await chrome.scripting.executeScript({
+   907→        target: { tabId },
+   908→        func: async (payload) => {
+   909→          try {
+   910→            window.localStorage.clear();
+   911→            const ls = (payload && payload.localStorage) || {};
+   912→            for (const [k, v] of Object.entries(ls)) {
+   913→              window.localStorage.setItem(k, v);
+   914→            }
+   915→          } catch {}
+   916→
+   917→          try {
+   918→            window.sessionStorage.clear();
+   919→            const ss = (payload && payload.sessionStorage) || {};
+   920→            for (const [k, v] of Object.entries(ss)) {
+   921→              window.sessionStorage.setItem(k, v);
+   922→            }
+   923→          } catch {}
+   924→
+   925→          try {
+   926→            if (window.indexedDB && typeof window.indexedDB.databases === 'function') {
+   927→              const syncIdb = async () => {
+   928→                const targetIdb = (payload && payload.indexedDB) || {};
+   929→                const existingDbs = await window.indexedDB.databases();
+   930→                const authPattern = /firebase|auth|session|token|supabase|clerk|keyval|user/i;
+   931→                const dbNames = new Set([
+   932→                  ...Object.keys(targetIdb),
+   933→                  ...existingDbs
+   934→                    .map((d) => d.name)
+   935→                    .filter((n) => n && authPattern.test(n))
+   936→                ]);
+   937→
+   938→                for (const dbName of dbNames) {
+   939→                  await new Promise((resolve) => {
+   940→                    let settled = false;
+   941→                    const done = () => {
+   942→                      if (!settled) {
+   943→                        settled = true;
+   944→                        resolve();
+   945→                      }
+   946→                    };
+   947→                    const timer = setTimeout(done, 400);
+   948→                    try {
+   949→                      const req = window.indexedDB.open(dbName);
+   950→                      req.onerror = () => {
+   951→                        clearTimeout(timer);
+   952→                        done();
+   953→                      };
+   954→                      req.onsuccess = () => {
+   955→                        const db = req.result;
+   956→                        const storeNames = Array.from(db.objectStoreNames || []);
+   957→                        if (storeNames.length === 0) {
+   958→                          db.close();
+   959→                          clearTimeout(timer);
+   960→                          done();
+   961→                          return;
+   962→                        }
+   963→                        try {
+   964→                          const tx = db.transaction(storeNames, 'readwrite');
+   965→                          const savedStores = targetIdb[dbName] || {};
+   966→                          for (const sName of storeNames) {
+   967→                            const store = tx.objectStore(sName);
+   968→                            store.clear();
+   969→                            const savedStore = savedStores[sName];
+   970→                            if (savedStore && Array.isArray(savedStore.entries)) {
+   971→                              for (const item of savedStore.entries) {
+   972→                                try {
+   973→                                  if (savedStore.usesInlineKey || store.keyPath !== null) {
+   974→                                    store.put(item.value);
+   975→                                  } else {
+   976→                                    store.put(item.value, item.key);
+   977→                                  }
+   978→                                } catch {}
+   979→                              }
+   980→                            }
+   981→                          }
+   982→                          tx.oncomplete = tx.onerror = tx.onabort = () => {
+   983→                            db.close();
+   984→                            clearTimeout(timer);
+   985→                            done();
+   986→                          };
+   987→                        } catch {
+   988→                          db.close();
+   989→                          clearTimeout(timer);
+   990→                          done();
+   991→                        }
+   992→                      };
+   993→                    } catch {
+   994→                      clearTimeout(timer);
+   995→                      done();
+   996→                    }
+   997→                  });
+   998→                }
+   999→              };
+  1000→              await Promise.race([
+  1001→                syncIdb(),
+  1002→                new Promise((r) => setTimeout(r, 750))
+  1003→              ]);
+  1004→            }
+  1005→          } catch {}
+  1006→        },
+  1007→        args: [storagePayload || { localStorage: {}, sessionStorage: {}, indexedDB: {} }]
+  1008→      });
+  1009→
+  1010→      await chrome.scripting
+  1011→        .executeScript({
+  1012→          target: { tabId },
+  1013→          world: 'MAIN',
+  1014→          func: () => {
+  1015→            try {
+  1016→              Storage.prototype.setItem = function () {};
+  1017→              Storage.prototype.removeItem = function () {};
+  1018→              Storage.prototype.clear = function () {};
+  1019→            } catch {}
+  1020→          }
+  1021→        })
+  1022→        .catch(() => {});
+  1023→    } catch {}
+  1024→  }
+  1025→
+  1026→  await chrome.tabs.reload(tabId);
+  1027→}
+  1028→
+  1029→// ----------------------------------------------------------------------------
+  1030→// Badge & Content Widget Notifications
+  1031→// ----------------------------------------------------------------------------
+  1032→
+  1033→async function updateBadgeForTab(tabId, urlStr) {
+  1034→  if (!tabId) return;
+  1035→  await ensureSessionHydrated();
+  1036→
+  1037→  const info = getSiteInfo(urlStr);
+  1038→  if (!info.supported) {
+  1039→    await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
+  1040→    return;
+  1041→  }
+  1042→
+  1043→  const record = await getDomainRecord(info.siteKey);
+  1044→  if (!record.accounts.length) {
+  1045→    await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
+  1046→    return;
+  1047→  }
+  1048→
+  1049→  // If this tab is an Isolated Multi-Account Tab, show its dedicated account number!
+  1050→  const iso = isolatedTabs.get(tabId);
+  1051→  if (iso && iso.siteKey === info.siteKey) {
+  1052→    const isoIdx = record.accounts.findIndex((a) => a.id === iso.accountId);
+  1053→    if (isoIdx >= 0) {
+  1054→      await chrome.action
+  1055→        .setBadgeBackgroundColor({ tabId, color: '#06b6d4' })
+  1056→        .catch(() => {});
+  1057→      await chrome.action
+  1058→        .setBadgeText({ tabId, text: `🔒${isoIdx + 1}` })
+  1059→        .catch(() => {});
+  1060→      return;
+  1061→    }
+  1062→  }
+  1063→
+  1064→  const activeIdx = record.accounts.findIndex((a) => a.id === record.activeAccountId);
+  1065→  if (activeIdx >= 0) {
+  1066→    const activeAcc = record.accounts[activeIdx];
+  1067→    await chrome.action
+  1068→      .setBadgeBackgroundColor({ tabId, color: activeAcc.color || '#6366f1' })
+  1069→      .catch(() => {});
+  1070→    await chrome.action
+  1071→      .setBadgeText({ tabId, text: String(activeIdx + 1) })
+  1072→      .catch(() => {});
+  1073→  } else {
+  1074→    await chrome.action
+  1075→      .setBadgeBackgroundColor({ tabId, color: '#64748b' })
+  1076→      .catch(() => {});
+  1077→    await chrome.action
+  1078→      .setBadgeText({ tabId, text: '+' })
+  1079→      .catch(() => {});
+  1080→  }
+  1081→}
+  1082→
+  1083→async function broadcastWidgetRefresh(siteKey) {
+  1084→  try {
+  1085→    const tabs = await chrome.tabs.query({});
+  1086→    for (const tab of tabs) {
+  1087→      if (!tab.id || !tab.url) continue;
+  1088→      const info = getSiteInfo(tab.url);
+  1089→      if (info.supported && info.siteKey === siteKey) {
+  1090→        updateBadgeForTab(tab.id, tab.url);
+  1091→        chrome.tabs.sendMessage(tab.id, { type: 'REFRESH_WIDGET' }).catch(() => {});
+  1092→      }
+  1093→    }
+  1094→  } catch {}
+  1095→}
+  1096→
+  1097→// ----------------------------------------------------------------------------
+  1098→// Core Single-Tab Operations
+  1099→// ----------------------------------------------------------------------------
+  1100→
+  1101→async function maybeAutoSyncOutgoingAccount(record, siteInfo, tabId, storeId) {
+  1102→  if (!record.settings.autoSync || !record.activeAccountId) return;
+  1103→  // Do not overwrite shared activeAccountId from an isolated tab
+  1104→  if (isolatedTabs.has(tabId)) return;
+  1105→
+  1106→  const outgoing = record.accounts.find((a) => a.id === record.activeAccountId);
+  1107→  if (!outgoing) return;
+  1108→
+  1109→  const liveCookies = await captureCookies(siteInfo.cookieDomains, storeId);
+  1110→  const prevCount = Array.isArray(outgoing.cookies) ? outgoing.cookies.length : 0;
+  1111→
+  1112→  if (liveCookies.length > 0 && liveCookies.length >= Math.floor(prevCount * 0.5)) {
+  1113→    outgoing.cookies = liveCookies;
+  1114→    if (record.settings.includeStorage) {
+  1115→      const liveStorage = await captureTabStorage(tabId);
+  1116→      const prevLsCount = Object.keys(outgoing.localStorage || {}).length;
+  1117→      const liveLsCount = Object.keys(liveStorage.localStorage || {}).length;
+  1118→      if (prevLsCount === 0 || liveLsCount >= Math.floor(prevLsCount * 0.5)) {
+  1119→        outgoing.localStorage = liveStorage.localStorage;
+  1120→        outgoing.sessionStorage = liveStorage.sessionStorage;
+  1121→        outgoing.indexedDB = liveStorage.indexedDB;
+  1122→      }
+  1123→    }
+  1124→    outgoing.updatedAt = Date.now();
+  1125→  }
+  1126→}
+  1127→
+  1128→async function performSwitchToAccount(tab, targetAccountId) {
+  1129→  const siteInfo = getSiteInfo(tab?.url);
+  1130→  if (!siteInfo.supported) {
+  1131→    return { ok: false, error: 'این صفحه از تغییر اکانت پشتیبانی نمی‌کند.' };
+  1132→  }
+  1133→
+  1134→  await ensureSessionHydrated();
+  1135→  // If user explicitly switches inside an isolated tab, convert/re-open it in isolated mode for the new account
+  1136→  if (isolatedTabs.has(tab.id)) {
+  1137→    await cleanupIsolatedTab(tab.id);
+  1138→    // Clear __AI_SWITCHER_ISO__ from sessionStorage if switching to normal mode, OR re-seed isolated tab
+  1139→  }
+  1140→
+  1141→  return withSiteLock(siteInfo.siteKey, async () => {
+  1142→    const record = await getDomainRecord(siteInfo.siteKey);
+  1143→    const target = record.accounts.find((a) => a.id === targetAccountId);
+  1144→    if (!target) {
+  1145→      return { ok: false, error: 'اکانت مورد نظر پیدا نشد.' };
+  1146→    }
+  1147→
+  1148→    const storeId = await getStoreIdForTab(tab.id);
+  1149→
+  1150→    if (record.activeAccountId && record.activeAccountId !== target.id) {
+  1151→      await maybeAutoSyncOutgoingAccount(record, siteInfo, tab.id, storeId);
+  1152→    }
+  1153→
+  1154→    await clearCookies(siteInfo.cookieDomains, storeId);
+  1155→    await restoreCookies(target.cookies || [], storeId);
+  1156→
+  1157→    record.activeAccountId = target.id;
+  1158→    target.lastUsedAt = Date.now();
+  1159→    target.useCount = (target.useCount || 0) + 1;
+  1160→    await saveDomainRecord(siteInfo.siteKey, record);
+  1161→
+  1162→    await updateBadgeForTab(tab.id, tab.url);
+  1163→    await applyTabStorageAndReload(
+  1164→      tab.id,
+  1165→      {
+  1166→        localStorage: target.localStorage || {},
+  1167→        sessionStorage: target.sessionStorage || {},
+  1168→        indexedDB: target.indexedDB || {}
+  1169→      },
+  1170→      record.settings.includeStorage
+  1171→    );
+  1172→
+  1173→    const idx = record.accounts.findIndex((a) => a.id === target.id);
+  1174→    return {
+  1175→      ok: true,
+  1176→      activeAccountId: target.id,
+  1177→      activeIndex: idx,
+  1178→      accountName: target.name
+  1179→    };
+  1180→  });
+  1181→}
+  1182→
+  1183→async function performCycleSwitch(tab, direction = 1) {
+  1184→  const siteInfo = getSiteInfo(tab?.url);
+  1185→  if (!siteInfo.supported) {
+  1186→    return { ok: false, error: 'یک وب‌سایت معتبر باز کنید.' };
+  1187→  }
+  1188→
+  1189→  const record = await getDomainRecord(siteInfo.siteKey);
+  1190→  if (record.accounts.length === 0) {
+  1191→    return { ok: false, error: 'هنوز هیچ اکانتی برای این سایت ذخیره نشده است.' };
+  1192→  }
+  1193→
+  1194→  let pool = record.accounts.filter((a) => !a.skipped);
+  1195→  if (pool.length === 0) {
+  1196→    pool = record.accounts;
+  1197→  }
+  1198→
+  1199→  if (pool.length === 1 && record.activeAccountId === pool[0].id) {
+  1200→    return {
+  1201→      ok: false,
+  1202→      error: 'فقط ۱ اکانت فعال برای چرخش وجود دارد.'
+  1203→    };
+  1204→  }
+  1205→
+  1206→  const currentIdx = pool.findIndex((a) => a.id === record.activeAccountId);
+  1207→  let nextIdx;
+  1208→  if (currentIdx === -1) {
+  1209→    nextIdx = direction >= 0 ? 0 : pool.length - 1;
+  1210→  } else {
+  1211→    nextIdx = (currentIdx + direction + pool.length) % pool.length;
+  1212→  }
+  1213→
+  1214→  return performSwitchToAccount(tab, pool[nextIdx].id);
+  1215→}
+  1216→
+  1217→async function performNewCleanSession(tab) {
+  1218→  const siteInfo = getSiteInfo(tab?.url);
+  1219→  if (!siteInfo.supported) {
+  1220→    return { ok: false, error: 'این صفحه پشتیبانی نمی‌شود.' };
+  1221→  }
+  1222→
+  1223→  await cleanupIsolatedTab(tab.id);
+  1224→
+  1225→  return withSiteLock(siteInfo.siteKey, async () => {
+  1226→    const record = await getDomainRecord(siteInfo.siteKey);
+  1227→    const storeId = await getStoreIdForTab(tab.id);
+  1228→
+  1229→    if (record.activeAccountId) {
+  1230→      await maybeAutoSyncOutgoingAccount(record, siteInfo, tab.id, storeId);
+  1231→    }
+  1232→
+  1233→    record.activeAccountId = null;
+  1234→    await saveDomainRecord(siteInfo.siteKey, record);
+  1235→
+  1236→    await clearCookies(siteInfo.cookieDomains, storeId);
+  1237→    await updateBadgeForTab(tab.id, tab.url);
+  1238→    await applyTabStorageAndReload(
+  1239→      tab.id,
+  1240→      { localStorage: {}, sessionStorage: {}, indexedDB: {} },
+  1241→      true
+  1242→    );
+  1243→
+  1244→    return { ok: true };
+  1245→  });
+  1246→}
+  1247→
+  1248→async function performSaveCurrentAccount(tab, name, note, color, mailboxId, email) {
+  1249→  const siteInfo = getSiteInfo(tab?.url);
+  1250→  if (!siteInfo.supported) {
+  1251→    return { ok: false, error: 'این صفحه قابل ذخیره‌سازی نیست.' };
+  1252→  }
+  1253→
+  1254→  return withSiteLock(siteInfo.siteKey, async () => {
+  1255→    const record = await getDomainRecord(siteInfo.siteKey);
+  1256→    const storeId = await getStoreIdForTab(tab.id);
+  1257→
+  1258→    const cookies = await captureCookies(siteInfo.cookieDomains, storeId);
+  1259→    const storage = await captureTabStorage(tab.id);
+  1260→
+  1261→    const hasData =
+  1262→      cookies.length > 0 ||
+  1263→      Object.keys(storage.localStorage).length > 0 ||
+  1264→      Object.keys(storage.sessionStorage).length > 0;
+  1265→
+  1266→    if (!hasData) {
+  1267→      return {
+  1268→        ok: false,
+  1269→        error: 'هیچ کوکی یا نشستی در این سایت پیدا نشد. ابتدا وارد اکانت شوید.'
+  1270→      };
+  1271→    }
+  1272→
+  1273→    const nextNum = record.accounts.length + 1;
+  1274→    const finalName =
+  1275→      (name || '').trim() || `اکانت ${toPersianDigits(nextNum)}`;
+  1276→    const chosenColor =
+  1277→      color || ACCOUNT_COLORS[(nextNum - 1) % ACCOUNT_COLORS.length];
+  1278→
+  1279→    const now = Date.now();
+  1280→    const newAccount = {
+  1281→      id: `acc_${now}_${Math.random().toString(36).slice(2, 8)}`,
+  1282→      name: finalName,
+  1283→      note: (note || email || '').trim(),
+  1284→      email: (email || '').trim(),
+  1285→      mailboxId: mailboxId || null,
+  1286→      color: chosenColor,
+  1287→      skipped: false,
+  1288→      createdAt: now,
+  1289→      updatedAt: now,
+  1290→      lastUsedAt: now,
+  1291→      useCount: 1,
+  1292→      cookies,
+  1293→      localStorage: storage.localStorage,
+  1294→      sessionStorage: storage.sessionStorage,
+  1295→      indexedDB: storage.indexedDB
+  1296→    };
+  1297→
+  1298→    record.accounts.push(newAccount);
+  1299→    record.activeAccountId = newAccount.id;
+  1300→    await saveDomainRecord(siteInfo.siteKey, record);
+  1301→
+  1302→    await broadcastWidgetRefresh(siteInfo.siteKey);
+  1303→    return {
+  1304→      ok: true,
+  1305→      account: summarizeAccount(newAccount),
+  1306→      activeAccountId: newAccount.id
+  1307→    };
+  1308→  });
+  1309→}
+  1310→
+  1311→async function performUpdateAccountSession(tab, accountId) {
+  1312→  const siteInfo = getSiteInfo(tab?.url);
+  1313→  if (!siteInfo.supported) {
+  1314→    return { ok: false, error: 'این صفحه پشتیبانی نمی‌شود.' };
+  1315→  }
+  1316→
+  1317→  return withSiteLock(siteInfo.siteKey, async () => {
+  1318→    const record = await getDomainRecord(siteInfo.siteKey);
+  1319→    const acc = record.accounts.find((a) => a.id === accountId);
+  1320→    if (!acc) {
+  1321→      return { ok: false, error: 'اکانت پیدا نشد.' };
+  1322→    }
+  1323→
+  1324→    const storeId = await getStoreIdForTab(tab.id);
+  1325→    const cookies = await captureCookies(siteInfo.cookieDomains, storeId);
+  1326→    const storage = await captureTabStorage(tab.id);
+  1327→
+  1328→    acc.cookies = cookies;
+  1329→    acc.localStorage = storage.localStorage;
+  1330→    acc.sessionStorage = storage.sessionStorage;
+  1331→    acc.indexedDB = storage.indexedDB;
+  1332→    acc.updatedAt = Date.now();
+  1333→    acc.lastUsedAt = Date.now();
+  1334→    record.activeAccountId = acc.id;
+  1335→
+  1336→    await saveDomainRecord(siteInfo.siteKey, record);
+  1337→    await broadcastWidgetRefresh(siteInfo.siteKey);
+  1338→    return { ok: true, account: summarizeAccount(acc) };
+  1339→  });
+  1340→}
+  1341→
+  1342→// ----------------------------------------------------------------------------
+  1343→// Official Public Temp-Mail API Client (Mail.tm & Mail.gw)
+  1344→// ----------------------------------------------------------------------------
+  1345→
+  1346→const MAIL_PROVIDERS = {
+  1347→  'mail.tm': 'https://api.mail.tm',
+  1348→  'mail.gw': 'https://api.mail.gw'
+  1349→};
+  1350→
+  1351→const FIRST_NAMES = [
+  1352→  'alex', 'sara', 'liam', 'emma', 'noah', 'nina', 'amir', 'mila',
+  1353→  'ryan', 'lena', 'adam', 'tara', 'owen', 'maya', 'evan', 'zara'
+  1354→];
+  1355→
+  1356→async function getMailState() {
+  1357→  const data = await chrome.storage.local.get('mailState');
+  1358→  const st = data.mailState || { activeMailboxId: null, mailboxes: [] };
+  1359→  st.mailboxes = Array.isArray(st.mailboxes) ? st.mailboxes : [];
+  1360→  return st;
+  1361→}
+  1362→
+  1363→async function saveMailState(st) {
+  1364→  await chrome.storage.local.set({ mailState: st });
+  1365→}
+  1366→
+  1367→function getProviderBase(providerKey) {
+  1368→  return MAIL_PROVIDERS[providerKey] || MAIL_PROVIDERS['mail.tm'];
+  1369→}
+  1370→
+  1371→function extractHydraList(json) {
+  1372→  if (Array.isArray(json)) return json;
+  1373→  if (json && Array.isArray(json['hydra:member'])) return json['hydra:member'];
+  1374→  return [];
+  1375→}
+  1376→
+  1377→function extractOtpCode(text) {
+  1378→  if (!text || typeof text !== 'string') return null;
+  1379→  // Prioritize 5-8 digit codes near verification keywords, or standalone 6-digit codes
+  1380→  const keywordMatch = text.match(
+  1381→    /(?:code|verification|verify|otp|pin|passcode|کد|تایید|تأیید)[^\d]{0,30}(\b\d{4,8}\b)/i
+  1382→  );
+  1383→  if (keywordMatch) return keywordMatch[1];
+  1384→
+  1385→  const sixDigit = text.match(/\b(\d{6})\b/);
+  1386→  if (sixDigit) return sixDigit[1];
+  1387→
+  1388→  const fiveOrFour = text.match(/\b(\d{4,8})\b/);
+  1389→  if (fiveOrFour) {
+  1390→    const val = fiveOrFour[1];
+  1391→    // Avoid matching common years like 2024-2029
+  1392→    if (!/^202\d$/.test(val)) return val;
+  1393→  }
+  1394→  return null;
+  1395→}
+  1396→
+  1397→function extractVerificationLinks(text, htmlArr) {
+  1398→  const links = new Set();
+  1399→  const combined = [text || '', ...(Array.isArray(htmlArr) ? htmlArr : [])].join('\n');
+  1400→  const regex = /https?:\/\/[^\s"'<>\\)]+/gi;
+  1401→  let m;
+  1402→  while ((m = regex.exec(combined)) !== null) {
+  1403→    const url = m[0].replace(/[.,;!?]+$/, '');
+  1404→    if (
+  1405→      !/\.(png|jpg|jpeg|gif|svg|css|woff2?|ico)(\?|$)/i.test(url) &&
+  1406→      !url.includes('w3.org') &&
+  1407→      !url.includes('schema.org')
+  1408→    ) {
+  1409→      links.add(url);
+  1410→    }
+  1411→  }
+  1412→  const all = Array.from(links);
+  1413→  // Sort verification/confirm/magic links to top
+  1414→  all.sort((a, b) => {
+  1415→    const score = (u) =>
+  1416→      /verify|confirm|activate|auth|token|magic|callback|login/i.test(u) ? 0 : 1;
+  1417→    return score(a) - score(b);
+  1418→  });
+  1419→  return all.slice(0, 6);
+  1420→}
+  1421→
+  1422→async function fetchMailDomains(provider = 'mail.tm') {
+  1423→  const base = getProviderBase(provider);
+  1424→  const res = await fetch(`${base}/domains`, {
+  1425→    headers: { Accept: 'application/json' }
+  1426→  });
+  1427→  if (!res.ok) {
+  1428→    throw new Error(`خطا در دریافت دامنه‌ها از ${provider} (${res.status})`);
+  1429→  }
+  1430→  const data = await res.json();
+  1431→  const list = extractHydraList(data)
+  1432→    .filter((d) => d && d.domain && d.isActive !== false && !d.isPrivate)
+  1433→    .map((d) => d.domain);
+  1434→  return list;
+  1435→}
+  1436→
+  1437→function generateRandomUsername() {
+  1438→  const name = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  1439→  const suffix = Math.random().toString(36).slice(2, 6);
+  1440→  const num = Math.floor(10 + Math.random() * 89);
+  1441→  return `${name}.${suffix}${num}`;
+  1442→}
+  1443→
+  1444→function generateRandomPassword() {
+  1445→  return `Pw_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}!`;
+  1446→}
+  1447→
+  1448→async function createTempMailbox(provider = 'mail.tm', customUser = '', chosenDomain = '') {
+  1449→  const base = getProviderBase(provider);
+  1450→  let domain = (chosenDomain || '').trim();
+  1451→  if (!domain) {
+  1452→    const domains = await fetchMailDomains(provider);
+  1453→    if (!domains.length) {
+  1454→      throw new Error('هیچ دامنه فعالی روی این سرور یافت نشد. سرور دیگر را امتحان کنید.');
+  1455→    }
+  1456→    domain = domains[0];
+  1457→  }
+  1458→
+  1459→  const cleanUser = (customUser || '')
+  1460→    .trim()
+  1461→    .toLowerCase()
+  1462→    .replace(/[^a-z0-9._-]/g, '');
+  1463→  const username = cleanUser || generateRandomUsername();
+  1464→  const address = `${username}@${domain}`;
+  1465→  const password = generateRandomPassword();
+  1466→
+  1467→  // 1. Register mailbox
+  1468→  const createRes = await fetch(`${base}/accounts`, {
+  1469→    method: 'POST',
+  1470→    headers: {
+  1471→      'Content-Type': 'application/json',
+  1472→      Accept: 'application/json'
+  1473→    },
+  1474→    body: JSON.stringify({ address, password })
+  1475→  });
+  1476→
+  1477→  if (!createRes.ok) {
+  1478→    let detail = '';
+  1479→    try {
+  1480→      const errJson = await createRes.json();
+  1481→      detail = errJson['hydra:description'] || errJson.detail || errJson.message || '';
+  1482→    } catch {}
+  1483→    throw new Error(detail || `ساخت ایمیل ناموفق بود (کد ${createRes.status})`);
+  1484→  }
+  1485→
+  1486→  const accData = await createRes.json();
+  1487→
+  1488→  // 2. Obtain JWT Bearer token
+  1489→  const tokRes = await fetch(`${base}/token`, {
+  1490→    method: 'POST',
+  1491→    headers: {
+  1492→      'Content-Type': 'application/json',
+  1493→      Accept: 'application/json'
+  1494→    },
+  1495→    body: JSON.stringify({ address, password })
+  1496→  });
+  1497→
+  1498→  if (!tokRes.ok) {
+  1499→    throw new Error('ایمیل ساخته شد اما دریافت توکن ورود ناموفق بود.');
+  1500→  }
+  1501→  const tokData = await tokRes.json();
+  1502→
+  1503→  const mailbox = {
+  1504→    id: `mb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  1505→    remoteId: accData.id || '',
+  1506→    provider,
+  1507→    baseUrl: base,
+  1508→    address,
+  1509→    password,
+  1510→    token: tokData.token,
+  1511→    createdAt: Date.now()
+  1512→  };
+  1513→
+  1514→  const st = await getMailState();
+  1515→  st.mailboxes.unshift(mailbox);
+  1516→  st.activeMailboxId = mailbox.id;
+  1517→  await saveMailState(st);
+  1518→
+  1519→  return mailbox;
+  1520→}
+  1521→
+  1522→async function reauthMailbox(mailbox) {
+  1523→  const base = mailbox.baseUrl || getProviderBase(mailbox.provider);
+  1524→  const tokRes = await fetch(`${base}/token`, {
+  1525→    method: 'POST',
+  1526→    headers: {
+  1527→      'Content-Type': 'application/json',
+  1528→      Accept: 'application/json'
+  1529→    },
+  1530→    body: JSON.stringify({
+  1531→      address: mailbox.address,
+  1532→      password: mailbox.password
+  1533→    })
+  1534→  });
+  1535→  if (!tokRes.ok) {
+  1536→    throw new Error('نشست این ایمیل منقضی شده است.');
+  1537→  }
+  1538→  const tokData = await tokRes.json();
+  1539→  mailbox.token = tokData.token;
+  1540→
+  1541→  const st = await getMailState();
+  1542→  const idx = st.mailboxes.findIndex((m) => m.id === mailbox.id);
+  1543→  if (idx >= 0) {
+  1544→    st.mailboxes[idx].token = tokData.token;
+  1545→    await saveMailState(st);
+  1546→  }
+  1547→  return tokData.token;
+  1548→}
+  1549→
+  1550→async function mailAuthedFetch(mailbox, path, options = {}) {
+  1551→  const base = mailbox.baseUrl || getProviderBase(mailbox.provider);
+  1552→  let token = mailbox.token;
+  1553→  if (!token) {
+  1554→    token = await reauthMailbox(mailbox);
+  1555→  }
+  1556→
+  1557→  let res = await fetch(`${base}${path}`, {
+  1558→    ...options,
+  1559→    headers: {
+  1560→      Accept: 'application/json',
+  1561→      ...(options.headers || {}),
+  1562→      Authorization: `Bearer ${token}`
+  1563→    }
+  1564→  });
+  1565→
+  1566→  if (res.status === 401) {
+  1567→    token = await reauthMailbox(mailbox);
+  1568→    res = await fetch(`${base}${path}`, {
+  1569→      ...options,
+  1570→      headers: {
+  1571→        Accept: 'application/json',
+  1572→        ...(options.headers || {}),
+  1573→        Authorization: `Bearer ${token}`
+  1574→      }
+  1575→    });
+  1576→  }
+  1577→
+  1578→  return res;
+  1579→}
+  1580→
+  1581→async function fillValueInTab(tabId, value, fieldKind = 'email') {
+  1582→  if (!tabId || !value) return { ok: false, error: 'تب فعالی یافت نشد.' };
+  1583→  try {
+  1584→    const results = await chrome.scripting.executeScript({
+  1585→      target: { tabId },
+  1586→      func: (val, kind) => {
+  1587→        const isVisible = (el) => {
+  1588→          if (!el || el.disabled || el.readOnly) return false;
+  1589→          const rect = el.getBoundingClientRect();
+  1590→          return rect.width > 0 && rect.height > 0;
+  1591→        };
+  1592→
+  1593→        let target = null;
+  1594→        const active = document.activeElement;
+  1595→        if (active && active.tagName === 'INPUT' && isVisible(active)) {
+  1596→          target = active;
+  1597→        }
+  1598→
+  1599→        if (!target) {
+  1600→          const inputs = Array.from(document.querySelectorAll('input')).filter(isVisible);
+  1601→          if (kind === 'email') {
+  1602→            target =
+  1603→              inputs.find((i) => i.type === 'email') ||
+  1604→              inputs.find((i) => /mail|user|login/i.test(`${i.name} ${i.id} ${i.placeholder}`)) ||
+  1605→              inputs.find((i) => i.type === 'text');
+  1606→          } else {
+  1607→            target =
+  1608→              inputs.find((i) => /code|otp|pin|token|verify/i.test(`${i.name} ${i.id} ${i.placeholder} ${i.autocomplete}`)) ||
+  1609→              inputs.find((i) => i.type === 'text' || i.type === 'number' || i.type === 'tel');
+  1610→          }
+  1611→        }
+  1612→
+  1613→        if (!target) return { filled: false };
+  1614→
+  1615→        target.focus();
+  1616→        const nativeSetter = Object.getOwnPropertyDescriptor(
+  1617→          window.HTMLInputElement.prototype,
+  1618→          'value'
+  1619→        )?.set;
+  1620→        if (nativeSetter) {
+  1621→          nativeSetter.call(target, val);
+  1622→        } else {
+  1623→          target.value = val;
+  1624→        }
+  1625→        target.dispatchEvent(new Event('input', { bubbles: true }));
+  1626→        target.dispatchEvent(new Event('change', { bubbles: true }));
+  1627→        return { filled: true };
+  1628→      },
+  1629→      args: [value, fieldKind]
+  1630→    });
+  1631→
+  1632→    if (results?.[0]?.result?.filled) {
+  1633→      return { ok: true };
+  1634→    }
+  1635→    return { ok: false, error: 'فیلد ورودی مناسب در صفحه پیدا نشد (ایمیل کپی شد).' };
+  1636→  } catch {
+  1637→    return { ok: false, error: 'امکان درج خودکار در این صفحه نیست.' };
+  1638→  }
+  1639→}
+  1640→
+  1641→// ----------------------------------------------------------------------------
+  1642→// Message Router
+  1643→// ----------------------------------------------------------------------------
+  1644→
+  1645→async function resolveTargetTab(msgTabId, sender) {
+  1646→  if (msgTabId) {
+  1647→    try {
+  1648→      return await chrome.tabs.get(msgTabId);
+  1649→    } catch {
+  1650→      return null;
+  1651→    }
+  1652→  }
+  1653→  if (sender?.tab) {
+  1654→    return sender.tab;
+  1655→  }
+  1656→  const [activeTab] = await chrome.tabs.query({
+  1657→    active: true,
+  1658→    currentWindow: true
+  1659→  });
+  1660→  return activeTab || null;
+  1661→}
+  1662→
+  1663→chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  1664→  (async () => {
+  1665→    try {
+  1666→      await ensureSessionHydrated();
+  1667→
+  1668→      switch (msg?.type) {
+  1669→        case 'GET_SITE_STATE': {
+  1670→          const tab = await resolveTargetTab(msg.tabId, sender);
+  1671→          const url = msg.url || tab?.url || '';
+  1672→          const siteInfo = getSiteInfo(url);
+  1673→          const widgetPos = await getWidgetPos();
+  1674→
+  1675→          if (!siteInfo.supported) {
+  1676→            return {
+  1677→              ok: true,
+  1678→              supported: false,
+  1679→              reason: siteInfo.reason || 'unsupported_protocol',
+  1680→              widgetPos
+  1681→            };
+  1682→          }
+  1683→
+  1684→          const record = await getDomainRecord(siteInfo.siteKey);
+  1685→          if (tab?.id) {
+  1686→            updateBadgeForTab(tab.id, url);
+  1687→          }
+  1688→
+  1689→          const isoForThisTab = tab?.id ? isolatedTabs.get(tab.id) : null;
+  1690→          const openIsolatedTabs = [];
+  1691→          for (const [tid, info] of isolatedTabs.entries()) {
+  1692→            if (info.siteKey === siteInfo.siteKey) {
+  1693→              openIsolatedTabs.push({ tabId: tid, accountId: info.accountId });
+  1694→            }
+  1695→          }
+  1696→
+  1697→          return {
+  1698→            ok: true,
+  1699→            supported: true,
+  1700→            tabId: tab?.id || null,
+  1701→            url: siteInfo.url,
+  1702→            origin: siteInfo.origin,
+  1703→            siteKey: siteInfo.siteKey,
+  1704→            hostname: siteInfo.hostname,
+  1705→            isGoogleUnified: siteInfo.isGoogleUnified,
+  1706→            activeAccountId: record.activeAccountId,
+  1707→            isIsolatedTab: Boolean(isoForThisTab),
+  1708→            isolatedAccountId: isoForThisTab?.accountId || null,
+  1709→            openIsolatedTabs,
+  1710→            accounts: record.accounts.map(summarizeAccount),
+  1711→            settings: record.settings,
+  1712→            widgetPos
+  1713→          };
+  1714→        }
+  1715→
+  1716→        case 'OPEN_ISOLATED_TAB': {
+  1717→          const tab = await resolveTargetTab(msg.tabId, sender);
+  1718→          const targetUrl = msg.url || tab?.url;
+  1719→          const siteInfo = getSiteInfo(targetUrl);
+  1720→          if (!siteInfo.supported) {
+  1721→            return { ok: false, error: 'ابتدا وارد سایت مورد نظر شوید.' };
+  1722→          }
+  1723→
+  1724→          // If an isolated tab for this exact account is already open and focusExisting is true, focus it!
+  1725→          if (msg.focusIfOpen) {
+  1726→            for (const [tid, info] of isolatedTabs.entries()) {
+  1727→              if (info.siteKey === siteInfo.siteKey && info.accountId === msg.accountId) {
+  1728→                try {
+  1729→                  const existingTab = await chrome.tabs.get(tid);
+  1730→                  if (existingTab) {
+  1731→                    await chrome.tabs.update(tid, { active: true });
+  1732→                    return { ok: true, tabId: tid, focusedExisting: true };
+  1733→                  }
+  1734→                } catch {
+  1735→                  await cleanupIsolatedTab(tid);
+  1736→                }
+  1737→              }
+  1738→            }
+  1739→          }
+  1740→
+  1741→          return await openAccountInIsolatedTab(
+  1742→            targetUrl,
+  1743→            siteInfo.siteKey,
+  1744→            msg.accountId,
+  1745→            msg.active !== false
+  1746→          );
+  1747→        }
+  1748→
+  1749→        case 'OPEN_NEXT_ISOLATED_TAB': {
+  1750→          const tab = await resolveTargetTab(msg.tabId, sender);
+  1751→          const targetUrl = msg.url || tab?.url;
+  1752→          const siteInfo = getSiteInfo(targetUrl);
+  1753→          if (!siteInfo.supported) {
+  1754→            return { ok: false, error: 'ابتدا وارد سایت مورد نظر شوید.' };
+  1755→          }
+  1756→          const record = await getDomainRecord(siteInfo.siteKey);
+  1757→          const pool = record.accounts.filter((a) => !a.skipped);
+  1758→          const list = pool.length ? pool : record.accounts;
+  1759→          if (!list.length) {
+  1760→            return { ok: false, error: 'هیچ اکانتی ذخیره نشده است.' };
+  1761→          }
+  1762→
+  1763→          const alreadyOpenIds = new Set();
+  1764→          for (const info of isolatedTabs.values()) {
+  1765→            if (info.siteKey === siteInfo.siteKey) {
+  1766→              alreadyOpenIds.add(info.accountId);
+  1767→            }
+  1768→          }
+  1769→
+  1770→          // Prefer first account not yet open in an isolated tab; otherwise cycle after current
+  1771→          let chosen = list.find(
+  1772→            (a) => !alreadyOpenIds.has(a.id) && a.id !== record.activeAccountId
+  1773→          );
+  1774→          if (!chosen) {
+  1775→            chosen = list.find((a) => !alreadyOpenIds.has(a.id)) || list[0];
+  1776→          }
+  1777→
+  1778→          return await openAccountInIsolatedTab(
+  1779→            targetUrl,
+  1780→            siteInfo.siteKey,
+  1781→            chosen.id,
+  1782→            true
+  1783→          );
+  1784→        }
+  1785→
+  1786→        case 'OPEN_BATCH_ISOLATED_TABS': {
+  1787→          const tab = await resolveTargetTab(msg.tabId, sender);
+  1788→          const targetUrl = msg.url || tab?.url;
+  1789→          const siteInfo = getSiteInfo(targetUrl);
+  1790→          if (!siteInfo.supported) {
+  1791→            return { ok: false, error: 'ابتدا وارد سایت مورد نظر شوید.' };
+  1792→          }
+  1793→
+  1794→          const record = await getDomainRecord(siteInfo.siteKey);
+  1795→          const eligible = record.accounts.filter((a) => !a.skipped);
+  1796→          const list = eligible.length ? eligible : record.accounts;
+  1797→          if (!list.length) {
+  1798→            return { ok: false, error: 'اکانتی برای باز کردن وجود ندارد.' };
+  1799→          }
+  1800→
+  1801→          const alreadyOpenIds = new Set();
+  1802→          for (const info of isolatedTabs.values()) {
+  1803→            if (info.siteKey === siteInfo.siteKey) {
+  1804→              alreadyOpenIds.add(info.accountId);
+  1805→            }
+  1806→          }
+  1807→
+  1808→          const unopened = list.filter((a) => !alreadyOpenIds.has(a.id));
+  1809→          const candidates = unopened.length > 0 ? unopened : list;
+  1810→          const maxCount =
+  1811→            msg.count === 'all'
+  1812→              ? candidates.length
+  1813→              : Math.min(Number(msg.count) || 5, candidates.length);
+  1814→
+  1815→          const toOpen = candidates.slice(0, maxCount);
+  1816→
+  1817→          // Launch asynchronously with safe 550ms stagger so browser & Cloudflare don't choke
+  1818→          (async () => {
+  1819→            for (let i = 0; i < toOpen.length; i++) {
+  1820→              await openAccountInIsolatedTab(
+  1821→                targetUrl,
+  1822→                siteInfo.siteKey,
+  1823→                toOpen[i].id,
+  1824→                i === 0
+  1825→              ).catch(() => {});
+  1826→              if (i < toOpen.length - 1) {
+  1827→                await new Promise((r) => setTimeout(r, 550));
+  1828→              }
+  1829→            }
+  1830→          })();
+  1831→
+  1832→          return {
+  1833→            ok: true,
+  1834→            openingCount: toOpen.length
+  1835→          };
+  1836→        }
+  1837→
+  1838→        case 'SYNC_ISOLATED_STORAGE': {
+  1839→          const { siteKey, accountId, localStorage, sessionStorage } = msg;
+  1840→          if (!siteKey || !accountId) return { ok: false };
+  1841→          await withSiteLock(siteKey, async () => {
+  1842→            const rec = await getDomainRecord(siteKey);
+  1843→            const acc = rec.accounts.find((a) => a.id === accountId);
+  1844→            if (acc) {
+  1845→              if (localStorage && typeof localStorage === 'object') {
+  1846→                acc.localStorage = localStorage;
+  1847→              }
+  1848→              if (sessionStorage && typeof sessionStorage === 'object') {
+  1849→                acc.sessionStorage = sessionStorage;
+  1850→              }
+  1851→              acc.updatedAt = Date.now();
+  1852→              await saveDomainRecord(siteKey, rec);
+  1853→            }
+  1854→          });
+  1855→          return { ok: true };
+  1856→        }
+  1857→
+  1858→        case 'SYNC_ISOLATED_JS_COOKIE': {
+  1859→          const { siteKey, accountId, name, value, expired } = msg;
+  1860→          const tabId = sender?.tab?.id;
+  1861→          if (!siteKey || !accountId || !name) return { ok: false };
+  1862→
+  1863→          await withSiteLock(siteKey, async () => {
+  1864→            const rec = await getDomainRecord(siteKey);
+  1865→            const acc = rec.accounts.find((a) => a.id === accountId);
+  1866→            if (!acc) return;
+  1867→            acc.cookies = Array.isArray(acc.cookies) ? acc.cookies : [];
+  1868→            const idx = acc.cookies.findIndex((c) => c.name === name);
+  1869→            if (expired) {
+  1870→              if (idx >= 0) acc.cookies.splice(idx, 1);
+  1871→            } else if (idx >= 0) {
+  1872→              acc.cookies[idx].value = value;
+  1873→            } else {
+  1874→              acc.cookies.push({
+  1875→                name,
+  1876→                value,
+  1877→                domain: siteKey,
+  1878→                hostOnly: false,
+  1879→                path: '/',
+  1880→                secure: true,
+  1881→                httpOnly: false,
+  1882→                sameSite: 'lax',
+  1883→                session: true
+  1884→              });
+  1885→            }
+  1886→            acc.updatedAt = Date.now();
+  1887→            await saveDomainRecord(siteKey, rec);
+  1888→            if (tabId) {
+  1889→              await refreshIsolatedTabDnrRules(tabId, acc);
+  1890→            }
+  1891→          });
+  1892→          return { ok: true };
+  1893→        }
+  1894→
+  1895→        case 'SAVE_CURRENT_ACCOUNT': {
+  1896→          const tab = await resolveTargetTab(msg.tabId, sender);
+  1897→          let linkedMbId = msg.mailboxId || null;
+  1898→          let linkedEmail = msg.email || '';
+  1899→          if (msg.autoLinkActiveMail && !linkedMbId) {
+  1900→            const mState = await getMailState();
+  1901→            const activeMb = mState.mailboxes.find((m) => m.id === mState.activeMailboxId);
+  1902→            if (activeMb) {
+  1903→              linkedMbId = activeMb.id;
+  1904→              linkedEmail = activeMb.address;
+  1905→            }
+  1906→          }
+  1907→          return await performSaveCurrentAccount(
+  1908→            tab,
+  1909→            msg.name,
+  1910→            msg.note,
+  1911→            msg.color,
+  1912→            linkedMbId,
+  1913→            linkedEmail
+  1914→          );
+  1915→        }
+  1916→
+  1917→        case 'MAIL_GET_STATE': {
+  1918→          const st = await getMailState();
+  1919→          return {
+  1920→            ok: true,
+  1921→            activeMailboxId: st.activeMailboxId,
+  1922→            mailboxes: st.mailboxes.map((m) => ({
+  1923→              id: m.id,
+  1924→              provider: m.provider,
+  1925→              address: m.address,
+  1926→              createdAt: m.createdAt
+  1927→            }))
+  1928→          };
+  1929→        }
+  1930→
+  1931→        case 'MAIL_FETCH_DOMAINS': {
+  1932→          const domains = await fetchMailDomains(msg.provider || 'mail.tm');
+  1933→          return { ok: true, domains };
+  1934→        }
+  1935→
+  1936→        case 'MAIL_CREATE_INBOX': {
+  1937→          const mb = await createTempMailbox(
+  1938→            msg.provider || 'mail.tm',
+  1939→            msg.customUser || '',
+  1940→            msg.domain || ''
+  1941→          );
+  1942→          const st = await getMailState();
+  1943→          return {
+  1944→            ok: true,
+  1945→            mailbox: {
+  1946→              id: mb.id,
+  1947→              provider: mb.provider,
+  1948→              address: mb.address,
+  1949→              createdAt: mb.createdAt
+  1950→            },
+  1951→            activeMailboxId: st.activeMailboxId,
+  1952→            mailboxes: st.mailboxes.map((m) => ({
+  1953→              id: m.id,
+  1954→              provider: m.provider,
+  1955→              address: m.address,
+  1956→              createdAt: m.createdAt
+  1957→            }))
+  1958→          };
+  1959→        }
+  1960→
+  1961→        case 'MAIL_SELECT_INBOX': {
+  1962→          const st = await getMailState();
+  1963→          if (st.mailboxes.some((m) => m.id === msg.mailboxId)) {
+  1964→            st.activeMailboxId = msg.mailboxId;
+  1965→            await saveMailState(st);
+  1966→          }
+  1967→          return { ok: true, activeMailboxId: st.activeMailboxId };
+  1968→        }
+  1969→
+  1970→        case 'MAIL_DELETE_INBOX': {
+  1971→          const st = await getMailState();
+  1972→          st.mailboxes = st.mailboxes.filter((m) => m.id !== msg.mailboxId);
+  1973→          if (st.activeMailboxId === msg.mailboxId) {
+  1974→            st.activeMailboxId = st.mailboxes[0]?.id || null;
+  1975→          }
+  1976→          await saveMailState(st);
+  1977→          return {
+  1978→            ok: true,
+  1979→            activeMailboxId: st.activeMailboxId,
+  1980→            mailboxes: st.mailboxes.map((m) => ({
+  1981→              id: m.id,
+  1982→              provider: m.provider,
+  1983→              address: m.address,
+  1984→              createdAt: m.createdAt
+  1985→            }))
+  1986→          };
+  1987→        }
+  1988→
+  1989→        case 'MAIL_LIST_MESSAGES': {
+  1990→          const st = await getMailState();
+  1991→          const targetId = msg.mailboxId || st.activeMailboxId;
+  1992→          const mb = st.mailboxes.find((m) => m.id === targetId);
+  1993→          if (!mb) {
+  1994→            return { ok: false, error: 'ابتدا یک ایمیل بسازید یا انتخاب کنید.' };
+  1995→          }
+  1996→
+  1997→          const res = await mailAuthedFetch(mb, '/messages');
+  1998→          if (!res.ok) {
+  1999→            return { ok: false, error: `خطا در دریافت لیست پیام‌ها (${res.status})` };
+  2000→          }
+
+[showing lines 1-2000 of 2297; use offset=2001 with limit to continue reading]
