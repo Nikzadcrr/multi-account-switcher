@@ -315,20 +315,66 @@
                   <span data-icon="x" data-icon-class="ic ic-sm"></span>
                 </button>
               </div>
-              <div class="im-gmail-preview">
-                <span id="gmailAliasPreviewLocal" dir="ltr">you</span>
-                <span class="im-gmail-plus">+</span>
+
+              <select id="gmailDomainSelect" class="im-select im-gmail-select" title="کدام دامنه برای ساخت آدرس؟"></select>
+
+              <!-- حالت جیمیل: +tag یا نقطه‌گذاری -->
+              <div id="gmailAliasGmailForm">
+                <div class="im-gmail-preview">
+                  <span id="gmailAliasPreviewLocal" dir="ltr">you</span>
+                  <span class="im-gmail-plus" id="gmailPreviewPlus">+</span>
+                  <input
+                    type="text"
+                    id="gmailTagInput"
+                    class="im-input im-gmail-tag-input"
+                    placeholder="الیاس، مثلاً netflix"
+                    maxlength="30"
+                    dir="ltr"
+                  />
+                  <span class="im-gmail-domain" id="gmailPreviewDomain" dir="ltr">@gmail.com</span>
+                </div>
+                <label class="im-gmail-check">
+                  <input type="checkbox" id="gmailDotMode" />
+                  <span>ساخت <b>بدون +</b> — ترفند نقطه‌گذاری برای سایت‌هایی که + را رد می‌کنند</span>
+                </label>
+              </div>
+
+              <!-- حالت دامنهٔ اختصاصی -->
+              <div id="gmailAliasDomainForm" class="hidden">
                 <input
                   type="text"
-                  id="gmailTagInput"
-                  class="im-input im-gmail-tag-input"
-                  placeholder="الیاس، مثلاً netflix"
-                  maxlength="30"
+                  id="gmailCustomLocal"
+                  class="im-input"
+                  placeholder="نام دلخواه قبل از @ (خالی = تصادفی)"
+                  maxlength="28"
                   dir="ltr"
                 />
-                <span class="im-gmail-domain" dir="ltr">@gmail.com</span>
+                <div class="im-gmail-hint">
+                  هر اسمی بسازی روی دامنهٔ خودت می‌نشیند و نامه‌ها با فوروارد به جیمیلت می‌آیند. دامنهٔ اختصاصی قوی‌ترین روش است؛ تقریباً هیچ سایتی آن را «ایمیل الیاس» تشخیص نمی‌دهد.
+                </div>
               </div>
-              <div class="im-gmail-note">
+
+              <!-- افزودن دامنهٔ جدید -->
+              <div id="gmailNewDomainBox" class="hidden">
+                <input
+                  type="text"
+                  id="gmailNewDomainInput"
+                  class="im-input"
+                  placeholder="دامنهٔ خودت، مثلاً mydomain.com"
+                  maxlength="60"
+                  dir="ltr"
+                />
+                <button id="gmailAddDomainBtn" class="im-btn im-btn-primary">
+                  <span data-icon="plus"></span>
+                  <span>افزودن دامنه</span>
+                </button>
+                <button id="gmailOpenDomainGuideBtn" class="im-btn">
+                  <span data-icon="book-open"></span>
+                  <span>راهنمای دامنه (رایگان با Cloudflare)</span>
+                </button>
+              </div>
+
+              <div class="im-gmail-note" id="gmailAliasNote">
                 نامه‌های این آدرس به صندوق جیمیل خودت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. دامنه gmail.com واقعی است و هیچ سایتی آن را رد نمی‌کند.
               </div>
             </div>

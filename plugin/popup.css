@@ -1928,6 +1928,81 @@ svg.ic-xs {
   padding: 9px 11px;
 }
 
+/* --- انتخاب دامنهٔ الیاس (جیمیل / دامنهٔ خودت) --- */
+
+.im-gmail-select {
+  width: 100%;
+  direction: rtl;
+  text-align: right;
+  margin-bottom: 9px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.im-gmail-select option {
+  background: #0b1120;
+  color: #e2e8f0;
+}
+
+.im-gmail-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #94a3b8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.im-gmail-check input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  border: 1.5px solid rgba(148, 163, 184, 0.5);
+  border-radius: 4px;
+  background: rgba(11, 17, 32, 0.6);
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.im-gmail-check input[type='checkbox']:checked {
+  background: #34d399;
+  border-color: #34d399;
+}
+
+.im-gmail-check input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2306281a' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 11px no-repeat;
+}
+
+.im-gmail-check b {
+  color: #6ee7b7;
+}
+
+#gmailNewDomainBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+#gmailNewDomainBox .im-btn {
+  width: 100%;
+}
+
+.im-gmail-plus.hidden,
+.im-gmail-tag-input.hidden {
+  display: none;
+}
+
 /* --- Wizard modal --- */
 
 .modal-wizard {

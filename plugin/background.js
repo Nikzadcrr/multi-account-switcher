@@ -1549,6 +1549,9 @@ function validateGmailClientId(id) {
   return /^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/i.test(String(id || '').trim());
 }
 
+// === ALIAS-METHODS-START ===
+// (بلوک خالص و بدون وابستگی — با اسکریپت تست Node هم اجرا می‌شود)
+
 function sanitizeGmailTag(v) {
   return (v || '')
     .trim()
@@ -1557,6 +1560,7 @@ function sanitizeGmailTag(v) {
     .slice(0, 30);
 }
 
+// روش ۱ (قبلی): base+tag@gmail.com — ساده ولی بعضی سایت‌ها علامت + را رد می‌کنند
 function buildGmailAlias(baseEmail, tag) {
   const cleanBase = String(baseEmail || '').trim().toLowerCase();
   const atIdx = cleanBase.lastIndexOf('@');
@@ -1571,6 +1575,107 @@ function buildGmailAlias(baseEmail, tag) {
   }
   return { address: `${local}+${t}@${domain}`, tag: t };
 }
+
+// روش ۲ (ترفند نقطه‌گذاری): بدون علامت + — گوگل نقطه را نادیده می‌گیرد و نامه به
+// همان صندوق می‌آید؛ ولی خیلی از سایت‌ها آن را «الیاس» تشخیص نمی‌دهند.
+// چرخش دامنهٔ googlemail.com هم برای تنوع بیشتر (هر دو معادل gmail.com هستند).
+function gmailDotLocalCandidates(local, usedSet, count) {
+  const base = String(local || '').toLowerCase().replace(/\./g, '');
+  const out = [];
+  if (base.length < 3) return out; // خیلی کوتاه — حالت نقطه‌ای ممکن نیست
+  const gaps = base.length - 1;
+  const maxDots = Math.max(1, Math.min(3, Math.floor(gaps / 2)));
+  let guard = 0;
+  while (out.length < count && guard < count * 60) {
+    guard++;
+    const wanted = 1 + Math.floor(Math.random() * maxDots);
+    const dotAt = [];
+    let ok = true;
+    for (let g = 0; g < gaps; g++) {
+      if (dotAt.length >= wanted) break;
+      if (Math.random() < 0.4) {
+        if (dotAt.length && dotAt[dotAt.length - 1] === g - 1) {
+          ok = false; // دو نقطهٔ پشت‌سرهم (..) در جیمیل مجاز نیست
+          break;
+        }
+        dotAt.push(g);
+      }
+    }
+    if (!ok || !dotAt.length) continue;
+    let s = base[0];
+    for (let i = 1; i < base.length; i++) {
+      if (dotAt.includes(i - 1)) s += '.';
+      s += base[i];
+    }
+    if (usedSet.has(s)) continue;
+    usedSet.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
+function buildGmailDotAlias(baseEmail, usedAddresses) {
+  const clean = String(baseEmail || '').trim().toLowerCase();
+  const atIdx = clean.lastIndexOf('@');
+  if (atIdx <= 0 || !clean.slice(atIdx + 1)) return null;
+  const local = clean.slice(0, atIdx);
+  const usedLocals = new Set(
+    Array.from(usedAddresses || []).map((a) => {
+      const s = String(a || '').toLowerCase();
+      const i = s.lastIndexOf('@');
+      return i > 0 ? s.slice(0, i) : s;
+    })
+  );
+  const cands = gmailDotLocalCandidates(local, usedLocals, 24);
+  if (!cands.length) return null;
+  const domains = ['gmail.com', 'googlemail.com'];
+  const domain = domains[Math.floor(Math.random() * domains.length)];
+  return { address: `${cands[0]}@${domain}`, tag: '' };
+}
+
+// روش ۳ (دامنهٔ اختصاصی catch-all): هر آدرسی روی دامنهٔ خودت = یک اکانت جدید
+// نامه‌ها با Email Routing (رایگان کلادفلر) به جیمیل پایه فوروارد می‌شوند.
+function generateCustomLocal() {
+  const C = 'bcdfgklmnprstvz';
+  const V = 'aeiou';
+  let s = '';
+  for (let i = 0; i < 3; i++) {
+    s += C[Math.floor(Math.random() * C.length)];
+    s += V[Math.floor(Math.random() * V.length)];
+  }
+  s += String(Math.floor(Math.random() * 90) + 10);
+  return s; // مثل: bitavok47
+}
+
+function isValidCustomDomain(d) {
+  return /^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/.test(String(d || '').trim().toLowerCase());
+}
+
+// جست‌وجوی جیمیل: علاوه بر deliveredto (پاکت) سراغ to: هم می‌رویم تا نامه‌های
+// فورواردشده از دامنهٔ اختصاصی هم پیدا شوند؛ پوشهٔ اسپم هم چک می‌شود.
+function buildGmailSearchQuery(address) {
+  const a = String(address || '').trim();
+  if (!a) return 'in:inbox';
+  return `(to:${a} OR deliveredto:${a}) (in:inbox OR in:spam)`;
+}
+
+// مسیریابی پیام فید مشترک (حالت سریع): اگر آدرس یک صندوق داخل متن پیام بود،
+// پیام مالِ همان صندوق است؛ اگر هیچ‌کدام نبود، مبهم است و همه می‌بینند.
+function quickRouteHay(msg) {
+  return `${msg?.subject || ''} ${msg?.intro || ''} ${msg?.fromAddress || ''} ${
+    msg?.fromName || ''
+  } ${msg?.text || ''}`.toLowerCase();
+}
+
+function quickFindOwnerAddress(msg, candidateAddresses) {
+  const hay = quickRouteHay(msg);
+  for (const addr of candidateAddresses || []) {
+    const a = String(addr || '').toLowerCase();
+    if (a && hay.includes(a)) return a;
+  }
+  return '';
+}
+// === ALIAS-METHODS-END ===
 
 function b64urlDecode(s) {
   const clean = String(s || '').replace(/-/g, '+').replace(/_/g, '/');
@@ -1811,7 +1916,9 @@ async function disconnectGmail() {
     tokenExpiresAt: 0,
     connectedAt: 0,
     appPasswordEmail: '',
-    appPassword: ''
+    appPassword: '',
+    // دامنه‌های اختصاصی ثبت‌شده حفظ شوند — تنظیم فوروارد کلادفلر بیرون از افزونه است
+    customDomains: Array.isArray(oauth.customDomains) ? oauth.customDomains : []
   });
 }
 
@@ -2027,14 +2134,31 @@ async function connectGmailQuickWithPassword(email, appPassword) {
   return { email: accountEmail };
 }
 
-async function gmailQuickListMessages() {
+async function gmailQuickListMessages(mb) {
   const oauth = await getGmailOAuth();
   const xml = await gmailQuickFetchFeed({
     appPasswordEmail: oauth.appPasswordEmail || '',
     appPassword: oauth.appPassword || ''
   });
   const parsed = gmailQuickParseFeed(xml);
-  return parsed.messages;
+  let messages = parsed.messages;
+  if (mb && mb.address) {
+    // فید مشترک است — اگر آدرس صندوق دیگری داخل پیام بود، از این صندوق حذف کن
+    const st = await getMailState();
+    const others = st.mailboxes
+      .filter((m) => m.id !== mb.id && getMailboxType(m) === 'gmail' && m.address)
+      .map((m) => String(m.address).toLowerCase());
+    const own = String(mb.address).toLowerCase();
+    messages = messages.filter((msg) => {
+      const hay = quickRouteHay(msg);
+      if (own && hay.includes(own)) return true;
+      for (const o of others) {
+        if (o && hay.includes(o)) return false;
+      }
+      return true; // مبهم — همه می‌بینند
+    });
+  }
+  return messages;
 }
 
 async function gmailQuickReadMessage(messageId) {
@@ -2049,7 +2173,7 @@ async function gmailQuickReadMessage(messageId) {
   return full;
 }
 
-async function createGmailAliasMailbox(tag) {
+async function createGmailAliasMailbox(tag, opts = {}) {
   const oauth = await getGmailOAuth();
   if ((oauth.mode || 'api') === 'quick' && !oauth.email) {
     throw new Error('در حالت سریع، اول دکمهٔ «اتصال فوری» را بزن تا جیمیل شناسایی شود.');
@@ -2061,13 +2185,50 @@ async function createGmailAliasMailbox(tag) {
     await saveGmailOAuth({ ...latest, email: baseEmail, connectedAt: Date.now() });
   }
 
-  const { address, tag: cleanTag } = buildGmailAlias(baseEmail, tag);
-
   const st = await getMailState();
-  if (st.mailboxes.some((m) => m.address === address)) {
-    st.activeMailboxId = st.mailboxes.find((m) => m.address === address).id;
-    await saveMailState(st);
-    throw new Error('این الیاس قبلاً ساخته شده و صندوق آن فعال شد.');
+  const used = new Set(st.mailboxes.map((m) => String(m.address || '').toLowerCase()));
+
+  const style = opts.style === 'dot' ? 'dot' : 'plus';
+  const domain = String(opts.domain || '').trim().toLowerCase();
+  const customLocal = String(opts.customLocal || '').trim().toLowerCase();
+
+  let address = '';
+  let cleanTag = '';
+  let aliasStyle = 'plus';
+  let aliasDomain = '';
+
+  if (domain) {
+    // روش ۳ — دامنهٔ اختصاصی (catch-all): هر نامی روی دامنهٔ خودت
+    if (!isValidCustomDomain(domain)) {
+      throw new Error('قالب دامنه معتبر نیست (مثال: mydomain.com).');
+    }
+    const local = customLocal.replace(/[^a-z0-9._-]/g, '').slice(0, 28);
+    address = `${local || generateCustomLocal()}@${domain}`;
+    aliasStyle = 'custom';
+    aliasDomain = domain;
+    if (used.has(address.toLowerCase())) {
+      throw new Error('این آدرس قبلاً ساخته شده؛ نام دیگری وارد کن.');
+    }
+  } else if (style === 'dot') {
+    // روش ۲ — ترفند نقطه‌گذاری، بدون علامت +
+    const r = buildGmailDotAlias(baseEmail, used);
+    if (!r) {
+      throw new Error(
+        'ظرفیت حالت نقطه‌ای این جیمیل پر شده (اسم کوتاه است). حالت +tag را انتخاب کن یا دامنهٔ اختصاصی اضافه کن.'
+      );
+    }
+    address = r.address;
+    aliasStyle = 'dot';
+  } else {
+    // روش ۱ — همان +tag قبلی
+    const r = buildGmailAlias(baseEmail, tag);
+    address = r.address;
+    cleanTag = r.tag;
+    if (used.has(address.toLowerCase())) {
+      st.activeMailboxId = st.mailboxes.find((m) => m.address.toLowerCase() === address.toLowerCase()).id;
+      await saveMailState(st);
+      throw new Error('این الیاس قبلاً ساخته شده و صندوق آن فعال شد.');
+    }
   }
 
   const mailbox = {
@@ -2077,6 +2238,8 @@ async function createGmailAliasMailbox(tag) {
     address,
     baseEmail,
     tag: cleanTag,
+    aliasStyle,
+    aliasDomain,
     createdAt: Date.now()
   };
   st.mailboxes.unshift(mailbox);
@@ -2087,8 +2250,10 @@ async function createGmailAliasMailbox(tag) {
 
 async function gmailListMessages(mb) {
   const oauth = await getGmailOAuth();
-  if ((oauth.mode || 'api') === 'quick') return gmailQuickListMessages();
-  const q = `deliveredto:${mb.address}`;
+  if ((oauth.mode || 'api') === 'quick') return gmailQuickListMessages(mb);
+  // to: + deliveredto: — تا نامه‌های فورواردشده از دامنهٔ اختصاصی هم پیدا شوند؛
+  // پوشهٔ اسپم هم چک می‌شود چون بعضی سایت‌ها آنجا می‌روند و کد گم نمی‌شود.
+  const q = buildGmailSearchQuery(mb.address);
   const data = await gmailApiFetch(
     `/messages?q=${encodeURIComponent(q)}&maxResults=20`
   );
@@ -2581,6 +2746,8 @@ function summarizeMailbox(m) {
     ptype: m.ptype || '',
     address: m.address,
     tag: m.tag || '',
+    aliasStyle: m.aliasStyle || '',
+    aliasDomain: m.aliasDomain || '',
     createdAt: m.createdAt
   };
 }
@@ -2738,11 +2905,17 @@ async function pollMailboxesForNotifications({ force = false } = {}) {
   const st = await getMailState();
   if (!st.mailboxes.length) return { ok: true, notified: 0 };
 
-  // در حالت سریع همهٔ صندوق‌های جیمیل یک فید مشترک دارند؛ اعلان فقط از صندوق اول فرستاده شود
+  // در حالت سریع همهٔ صندوق‌های جیمیل یک فید مشترک دارند؛ فقط صندوق اول فچ می‌شود
+  // و هر پیام بر اساس آدرسِ داخل متن، به صندوقِ درست مسیریابی می‌شود.
   const gmailQuickActive = ((await getGmailOAuth()).mode || 'api') === 'quick';
   const firstGmailBoxId = gmailQuickActive
     ? st.mailboxes.find((m) => getMailboxType(m) === 'gmail')?.id || null
     : null;
+  const quickCandidateAddrs = gmailQuickActive
+    ? st.mailboxes
+        .filter((m) => getMailboxType(m) === 'gmail' && m.address)
+        .map((m) => String(m.address).toLowerCase())
+    : [];
 
   let notifiedCount = 0;
   let stateDirty = false;
@@ -2767,17 +2940,43 @@ async function pollMailboxesForNotifications({ force = false } = {}) {
         .filter((m) => !seen.has(String(m.id)))
         .sort((a, b) => normalizeTimestamp(b.createdAt) - normalizeTimestamp(a.createdAt));
 
-      for (const m of fresh) {
+      // حالت سریع: پیام‌های متعلق به صندوق‌های دیگر را همان‌جا ثبت و اعلان بزن
+      let ownFresh = fresh;
+      if (gmailQuickActive && getMailboxType(mb) === 'gmail' && mb.id === firstGmailBoxId && fresh.length) {
+        ownFresh = [];
+        for (const m of fresh) {
+          const ownerAddr = quickFindOwnerAddress(m, quickCandidateAddrs);
+          const owner = ownerAddr
+            ? st.mailboxes.find(
+                (x) => getMailboxType(x) === 'gmail' && String(x.address).toLowerCase() === ownerAddr
+              )
+            : null;
+          if (owner && owner.id !== mb.id) {
+            if (!Array.isArray(owner.notifSeenIds)) owner.notifSeenIds = [];
+            owner.notifSeenIds.push(String(m.id));
+            owner.notifInit = true;
+            stateDirty = true;
+            if (!force && notifiedCount < NOTIF_MAX_PER_POLL) {
+              await showMailNotification(owner, m);
+              notifiedCount++;
+            }
+          } else {
+            ownFresh.push(m);
+          }
+        }
+      }
+
+      for (const m of ownFresh) {
         mb.notifSeenIds.push(String(m.id));
       }
       if (mb.notifSeenIds.length > 200) {
         mb.notifSeenIds = mb.notifSeenIds.slice(-120);
       }
 
-      if (fresh.length > 0) {
+      if (ownFresh.length > 0) {
         stateDirty = true;
         if (!force) {
-          for (const m of fresh.slice(0, NOTIF_MAX_PER_POLL)) {
+          for (const m of ownFresh.slice(0, NOTIF_MAX_PER_POLL)) {
             await showMailNotification(mb, m);
             notifiedCount++;
           }
@@ -3161,6 +3360,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             email: oauth.email || '',
             clientId: oauth.clientId || '',
             mode: oauth.mode || 'api',
+            customDomains: Array.isArray(oauth.customDomains) ? oauth.customDomains : [],
             extensionId: chrome.runtime.id,
             redirectUri: gmailRedirectUri()
           };
@@ -3241,6 +3441,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return { ok: true, connected: false };
         }
 
+        case 'GMAIL_ADD_DOMAIN': {
+          const d = String(msg.domain || '')
+            .trim()
+            .toLowerCase()
+            .replace(/^https?:\/\//, '')
+            .replace(/\/.*$/, '')
+            .replace(/^www\./, '');
+          if (!isValidCustomDomain(d)) {
+            return { ok: false, error: 'قالب دامنه معتبر نیست (مثال: mydomain.com).' };
+          }
+          const oauthAdd = await getGmailOAuth();
+          const listAdd = Array.isArray(oauthAdd.customDomains) ? oauthAdd.customDomains : [];
+          if (!listAdd.includes(d)) listAdd.push(d);
+          await saveGmailOAuth({ ...oauthAdd, customDomains: listAdd });
+          return { ok: true, customDomains: listAdd };
+        }
+
+        case 'GMAIL_REMOVE_DOMAIN': {
+          const dr = String(msg.domain || '').trim().toLowerCase();
+          const oauthRm = await getGmailOAuth();
+          const listRm = (Array.isArray(oauthRm.customDomains) ? oauthRm.customDomains : []).filter(
+            (x) => x !== dr
+          );
+          await saveGmailOAuth({ ...oauthRm, customDomains: listRm });
+          return { ok: true, customDomains: listRm };
+        }
+
         case 'MAIL_FETCH_DOMAINS': {
           const provider = msg.provider || 'hd';
           const domains = await fetchMailDomains(provider);
@@ -3250,7 +3477,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'MAIL_CREATE_INBOX': {
           const mb =
             msg.provider === 'gmail_real'
-              ? await createGmailAliasMailbox(msg.customUser || '')
+              ? await createGmailAliasMailbox(msg.customUser || '', {
+                  style: msg.aliasStyle,
+                  domain: msg.aliasDomain,
+                  customLocal: msg.customUser
+                })
               : await createTempMailbox(
                   msg.provider || 'hd',
                   msg.customUser || '',

@@ -63,7 +63,8 @@ const ICON_PATHS = {
   tag: '<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>',
   bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
   'arrow-down-up': '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
-  'mail-check': '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 16 2 2 4-4"/>'
+  'mail-check': '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 16 2 2 4-4"/>',
+  'book-open': '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'
 };
 
 function ic(name, cls = 'ic') {
@@ -252,6 +253,18 @@ const els = {
   gmailStatusEmail: document.getElementById('gmailStatusEmail'),
   gmailDisconnectBtn: document.getElementById('gmailDisconnectBtn'),
   gmailAliasPreviewLocal: document.getElementById('gmailAliasPreviewLocal'),
+  gmailPreviewPlus: document.getElementById('gmailPreviewPlus'),
+  gmailPreviewDomain: document.getElementById('gmailPreviewDomain'),
+  gmailDomainSelect: document.getElementById('gmailDomainSelect'),
+  gmailAliasGmailForm: document.getElementById('gmailAliasGmailForm'),
+  gmailAliasDomainForm: document.getElementById('gmailAliasDomainForm'),
+  gmailCustomLocal: document.getElementById('gmailCustomLocal'),
+  gmailNewDomainBox: document.getElementById('gmailNewDomainBox'),
+  gmailNewDomainInput: document.getElementById('gmailNewDomainInput'),
+  gmailAddDomainBtn: document.getElementById('gmailAddDomainBtn'),
+  gmailOpenDomainGuideBtn: document.getElementById('gmailOpenDomainGuideBtn'),
+  gmailDotMode: document.getElementById('gmailDotMode'),
+  gmailAliasNote: document.getElementById('gmailAliasNote'),
   gmailTagInput: document.getElementById('gmailTagInput'),
   openGmailWizardBtn: document.getElementById('openGmailWizardBtn'),
   gmailWizardModal: document.getElementById('gmailWizardModal'),
@@ -812,12 +825,15 @@ async function loadGmailStatus(force = false) {
             email: '',
             clientId: '',
             mode: 'api',
+            customDomains: [],
             extensionId: chrome.runtime.id || '',
             redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
           };
   }
   return gmailStatus;
 }
+
+let gmailPreviewBaseDomain = '@gmail.com'; // دامنهٔ جیمیل متصل — برای پیش‌نمایش
 
 async function renderGmailAliasBox() {
   const st = await loadGmailStatus(true);
@@ -830,14 +846,60 @@ async function renderGmailAliasBox() {
       st.mode === 'quick' ? `${st.email} · حالت سریع` : st.email;
     const local = String(st.email).split('@')[0] || 'you';
     els.gmailAliasPreviewLocal.textContent = local;
-    const domain = String(st.email).includes('@')
+    gmailPreviewBaseDomain = String(st.email).includes('@')
       ? `@${String(st.email).split('@')[1]}`
       : '@gmail.com';
-    const domainEl = document.querySelector('.im-gmail-domain');
-    if (domainEl) domainEl.textContent = domain;
+    renderGmailDomainSelect(Array.isArray(st.customDomains) ? st.customDomains : []);
+    applyGmailAliasMode();
   }
 
   fillWizardStaticFields(st);
+}
+
+function renderGmailDomainSelect(customDomains) {
+  const sel = els.gmailDomainSelect;
+  const prev = sel.dataset.prev || '';
+  sel.innerHTML = '';
+  const og = document.createElement('option');
+  og.value = '';
+  og.textContent = 'روی جیمیل خودت (gmail.com)';
+  sel.appendChild(og);
+  for (const d of customDomains) {
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = `دامنهٔ خودت (@${d})`;
+    sel.appendChild(o);
+  }
+  const on = document.createElement('option');
+  on.value = '__new';
+  on.textContent = 'افزودن دامنهٔ اختصاصی...';
+  sel.appendChild(on);
+  if (prev && Array.from(sel.options).some((o) => o.value === prev)) {
+    sel.value = prev;
+  }
+}
+
+function applyGmailAliasMode() {
+  if (!els.gmailDomainSelect) return;
+  const v = els.gmailDomainSelect.value;
+  const isCustom = Boolean(v) && v !== '__new';
+  els.gmailNewDomainBox.classList.toggle('hidden', v !== '__new');
+  els.gmailAliasGmailForm.classList.toggle('hidden', isCustom || v === '__new');
+  els.gmailAliasDomainForm.classList.toggle('hidden', !isCustom);
+  if (!isCustom) {
+    const dot = els.gmailDotMode && els.gmailDotMode.checked;
+    els.gmailPreviewPlus.classList.toggle('hidden', Boolean(dot));
+    els.gmailTagInput.classList.toggle('hidden', Boolean(dot));
+    els.gmailPreviewDomain.textContent = dot
+      ? '@gmail.com / @googlemail.com'
+      : gmailPreviewBaseDomain;
+    els.gmailAliasNote.textContent = dot
+      ? 'ترفند نقطه‌گذاری: به‌جای +tag، نقطه‌های تصادفی داخل اسم جیمیلت می‌گذاریم (مثل you.name@gmail.com) و دامنه را هم بین gmail.com و googlemail.com می‌چرخانیم. گوگل همه را به صندوق خودت می‌فرستد، ولی خیلی از سایت‌ها آن را الیاس تشخیص نمی‌دهند و کد را می‌فرستند.'
+      : 'نامه‌های این آدرس به صندوق جیمیل خودت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. اگر سایتی + را رد کرد یا کد نفرستاد، حالت «بدون +» را روشن کن یا دامنهٔ اختصاصی اضافه کن.';
+  } else {
+    els.gmailAliasNote.textContent =
+      'نامه‌های دامنهٔ خودت با فوروارد (Email Routing) به جیمیلت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. اگر هنوز فوروارد را نساخته‌ای، دکمهٔ راهنما را بزن.';
+  }
 }
 
 function fillWizardStaticFields(st) {
@@ -1185,6 +1247,44 @@ function renderMailUI() {
   }
 }
 
+els.gmailDomainSelect.addEventListener('change', () => {
+  els.gmailDomainSelect.dataset.prev = els.gmailDomainSelect.value;
+  applyGmailAliasMode();
+});
+
+els.gmailDotMode.addEventListener('change', applyGmailAliasMode);
+
+els.gmailAddDomainBtn.addEventListener('click', async () => {
+  const d = els.gmailNewDomainInput.value.trim().toLowerCase();
+  if (!d) {
+    showToast('دامنه را وارد کن (مثلاً mydomain.com).', true);
+    return;
+  }
+  els.gmailAddDomainBtn.disabled = true;
+  try {
+    const res = await sendMsg({ type: 'GMAIL_ADD_DOMAIN', domain: d });
+    if (!res?.ok) {
+      showToast(res?.error || 'دامنه ذخیره نشد.', true);
+      return;
+    }
+    els.gmailNewDomainInput.value = '';
+    gmailStatus = { ...gmailStatus, customDomains: res.customDomains || [] };
+    renderGmailDomainSelect(res.customDomains || []);
+    els.gmailDomainSelect.dataset.prev = d;
+    els.gmailDomainSelect.value = d;
+    applyGmailAliasMode();
+    showToast(`دامنهٔ ${d} اضافه شد — حالا هر اسمی روی آن بساز.`);
+  } finally {
+    els.gmailAddDomainBtn.disabled = false;
+  }
+});
+
+els.gmailOpenDomainGuideBtn.addEventListener('click', () => {
+  try {
+    chrome.tabs.create({ url: chrome.runtime.getURL('domain-setup.html') });
+  } catch {}
+});
+
 els.createMailBtn.addEventListener('click', async () => {
   els.createMailBtn.disabled = true;
   const originalLabel = els.createMailBtn.innerHTML;
@@ -1192,15 +1292,26 @@ els.createMailBtn.addEventListener('click', async () => {
 
   const isGmailAlias = mailUi.provider === 'gmail_real';
   const isRandom = !isGmailAlias && mailUi.group === 'random';
+
+  // انتخاب‌های الیاس جیمیل: دامنه (جیمیل / دامنهٔ خودت) و حالت (+tag / بدون +)
+  const domainSelVal = isGmailAlias && els.gmailDomainSelect ? els.gmailDomainSelect.value : '';
+  const customDomain =
+    isGmailAlias && domainSelVal && domainSelVal !== '__new' ? domainSelVal : '';
+  const dotMode = isGmailAlias && !customDomain && els.gmailDotMode && els.gmailDotMode.checked;
+
   const res = await sendMsg({
     type: 'MAIL_CREATE_INBOX',
     provider: mailUi.provider,
     domain: isRandom ? '' : mailUi.domain,
     customUser: isGmailAlias
-      ? els.gmailTagInput.value.trim()
+      ? customDomain
+        ? els.gmailCustomLocal.value.trim()
+        : els.gmailTagInput.value.trim()
       : isRandom
         ? ''
-        : els.mailCustomUser.value.trim()
+        : els.mailCustomUser.value.trim(),
+    aliasStyle: dotMode ? 'dot' : 'plus',
+    aliasDomain: customDomain
   });
 
   els.createMailBtn.disabled = false;
@@ -1209,6 +1320,7 @@ els.createMailBtn.addEventListener('click', async () => {
   if (res.ok) {
     els.mailCustomUser.value = '';
     els.gmailTagInput.value = '';
+    if (els.gmailCustomLocal) els.gmailCustomLocal.value = '';
     createCardOpen = false;
     mailState.activeMailboxId = res.activeMailboxId;
     mailState.mailboxes = res.mailboxes || [];
