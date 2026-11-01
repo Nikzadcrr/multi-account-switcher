@@ -243,6 +243,7 @@ const els = {
   gmailAliasBox: document.getElementById('gmailAliasBox'),
   gmailConnectedBox: document.getElementById('gmailConnectedBox'),
   gmailConnectBox: document.getElementById('gmailConnectBox'),
+  gmailQuickConnectBtn: document.getElementById('gmailQuickConnectBtn'),
   gmailStatusEmail: document.getElementById('gmailStatusEmail'),
   gmailDisconnectBtn: document.getElementById('gmailDisconnectBtn'),
   gmailAliasPreviewLocal: document.getElementById('gmailAliasPreviewLocal'),
@@ -805,6 +806,7 @@ async function loadGmailStatus(force = false) {
             connected: false,
             email: '',
             clientId: '',
+            mode: 'api',
             extensionId: chrome.runtime.id || '',
             redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
           };
@@ -819,7 +821,8 @@ async function renderGmailAliasBox() {
   els.gmailConnectBox.classList.toggle('hidden', Boolean(st.connected));
 
   if (st.connected) {
-    els.gmailStatusEmail.textContent = st.email;
+    els.gmailStatusEmail.textContent =
+      st.mode === 'quick' ? `${st.email} · حالت سریع` : st.email;
     const local = String(st.email).split('@')[0] || 'you';
     els.gmailAliasPreviewLocal.textContent = local;
     const domain = String(st.email).includes('@')
@@ -925,6 +928,33 @@ els.gmailDisconnectBtn.addEventListener('click', async () => {
     gmailStatus = null;
     await renderGmailAliasBox();
     showToast('اتصال جیمیل قطع شد (صندوق‌های الیاس حفظ شدند).');
+  }
+});
+
+els.gmailQuickConnectBtn.addEventListener('click', async () => {
+  const btn = els.gmailQuickConnectBtn;
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
+  try {
+    const res = await sendMsg({ type: 'GMAIL_CONNECT_QUICK' });
+    if (!res?.ok) throw new Error(res?.error || 'اتصال فوری ناموفق بود.');
+    gmailStatus = {
+      ok: true,
+      connected: true,
+      email: res.email,
+      clientId: '',
+      mode: 'quick',
+      extensionId: chrome.runtime.id || '',
+      redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
+    };
+    await renderGmailAliasBox();
+    showToast(`جیمیل متصل شد (حالت سریع): ${res.email}`);
+  } catch (e) {
+    showToast(e?.message || 'اتصال فوری ناموفق بود.', true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
   }
 });
 

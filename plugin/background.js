@@ -1529,6 +1529,7 @@ async function getGmailOAuth() {
   const data = await chrome.storage.local.get('gmailOAuth');
   return data.gmailOAuth || {
     clientId: '',
+    mode: 'api',
     email: '',
     accessToken: '',
     tokenExpiresAt: 0,
@@ -1790,7 +1791,7 @@ async function connectGmail(clientId) {
   if (!email) throw new Error('ایمیل حساب گوگل دریافت نشد.');
 
   const latest = await getGmailOAuth();
-  await saveGmailOAuth({ ...latest, email, connectedAt: Date.now() });
+  await saveGmailOAuth({ ...latest, email, mode: 'api', connectedAt: Date.now() });
   return { email };
 }
 
@@ -1803,6 +1804,7 @@ async function disconnectGmail() {
   }
   await saveGmailOAuth({
     clientId: oauth.clientId,
+    mode: '',
     email: '',
     accessToken: '',
     tokenExpiresAt: 0,
@@ -1810,8 +1812,168 @@ async function disconnectGmail() {
   });
 }
 
+// ---------------- Gmail Quick (اتصال فوری با سشن جیمیل مرورگر — بدون OAuth) ----------------
+// فید رسمی‌نشدتهٔ Atom جیمیل (mail.google.com/mail/feed/atom) با کوکی سشن خود مرورگر خوانده می‌شود؛
+// هیچ Client ID و هیچ تنظیمی در Google Cloud لازم نیست. فقط نامه‌های «ناخوانده» را برمی‌گرداند.
+
+const GMAIL_FEED_URLS = [
+  'https://mail.google.com/mail/u/0/feed/atom',
+  'https://mail.google.com/mail/feed/atom'
+];
+
+const gmailQuickCache = new Map(); // messageId -> پیام کامل
+
+function xmlDecodeEntities(s) {
+  return String(s || '')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => {
+      const code = parseInt(h, 16);
+      try {
+        return Number.isFinite(code) ? String.fromCodePoint(code) : '';
+      } catch {
+        return '';
+      }
+    })
+    .replace(/&#(\d+);/g, (_, d) => {
+      const code = parseInt(d, 10);
+      try {
+        return Number.isFinite(code) ? String.fromCodePoint(code) : '';
+      } catch {
+        return '';
+      }
+    })
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&(apos|#39);/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+function pickXmlTag(block, tag) {
+  if (!block) return '';
+  const m = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`, 'i'));
+  return m ? xmlDecodeEntities(m[1]).trim() : '';
+}
+
+function gmailQuickParseFeed(xml) {
+  const out = { email: '', messages: [] };
+  const feedHead = xml.match(/<feed[\s>][\s\S]*?<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (feedHead) {
+    const em = xmlDecodeEntities(feedHead[1]).match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+    if (em) out.email = em[0].toLowerCase();
+  }
+  const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
+  let m;
+  while ((m = entryRe.exec(xml))) {
+    const e = m[1];
+    const id = pickXmlTag(e, 'id');
+    if (!id) continue;
+    const subject = pickXmlTag(e, 'title') || '(بدون موضوع)';
+    const summary = pickXmlTag(e, 'summary');
+    const authorBlock = pickXmlTag(e, 'author');
+    const fromAddress = pickXmlTag(authorBlock, 'email');
+    const fromName = pickXmlTag(authorBlock, 'name') || fromAddress || 'ناشناس';
+    const issued =
+      pickXmlTag(e, 'issued') || pickXmlTag(e, 'published') || pickXmlTag(e, 'updated') || pickXmlTag(e, 'date');
+    let createdAt = '';
+    if (issued) {
+      const d = new Date(issued);
+      if (!Number.isNaN(d.getTime())) createdAt = d.toISOString();
+    }
+    const linkM = e.match(/<link[^>]*href="([^"]+)"[^>]*>/i);
+    const full = {
+      id,
+      fromAddress,
+      fromName,
+      subject,
+      text: summary,
+      html: [],
+      createdAt,
+      otpCode: extractOtpCode(`${subject}\n${summary}`),
+      links: extractVerificationLinks(summary, []),
+      gmailUrl: linkM ? xmlDecodeEntities(linkM[1]) : ''
+    };
+    gmailQuickCache.set(id, full);
+    out.messages.push({
+      id,
+      fromAddress,
+      fromName,
+      subject,
+      intro: summary.slice(0, 160),
+      seen: false,
+      createdAt,
+      otpCode: full.otpCode
+    });
+  }
+  return out;
+}
+
+async function gmailQuickFetchFeed() {
+  let lastErr = '';
+  for (const url of GMAIL_FEED_URLS) {
+    try {
+      const res = await fetch(url, {
+        credentials: 'include',
+        headers: { Accept: 'application/atom+xml, text/xml, */*' }
+      });
+      const txt = await res.text();
+      const head = txt.slice(0, 400).toLowerCase();
+      if (res.ok && (head.includes('<?xml') || head.includes('<feed'))) {
+        return txt;
+      }
+      lastErr = head.includes('<!doctype html') || txt.includes('accounts.google.com')
+        ? 'not-logged-in'
+        : `HTTP ${res.status}`;
+    } catch (e) {
+      lastErr = e?.message || 'network';
+    }
+  }
+  throw new Error(lastErr || 'feed-unavailable');
+}
+
+async function connectGmailQuick() {
+  const xml = await gmailQuickFetchFeed();
+  const parsed = gmailQuickParseFeed(xml);
+  if (!parsed.email) {
+    throw new Error(
+      'سشن جیمیل شناسایی نشد. یک بار Gmail را در همین مرورگر باز کن (mail.google.com) و دوباره تلاش کن.'
+    );
+  }
+  const oauth = await getGmailOAuth();
+  await saveGmailOAuth({
+    ...oauth,
+    mode: 'quick',
+    email: parsed.email,
+    accessToken: '',
+    tokenExpiresAt: 0,
+    connectedAt: Date.now()
+  });
+  return { email: parsed.email, count: parsed.messages.length };
+}
+
+async function gmailQuickListMessages() {
+  const xml = await gmailQuickFetchFeed();
+  const parsed = gmailQuickParseFeed(xml);
+  return parsed.messages;
+}
+
+async function gmailQuickReadMessage(messageId) {
+  let full = gmailQuickCache.get(messageId);
+  if (!full) {
+    await gmailQuickListMessages();
+    full = gmailQuickCache.get(messageId);
+  }
+  if (!full) {
+    throw new Error('پیام در فید پیدا نشد (شاید در Gmail خوانده شده است).');
+  }
+  return full;
+}
+
 async function createGmailAliasMailbox(tag) {
   const oauth = await getGmailOAuth();
+  if ((oauth.mode || 'api') === 'quick' && !oauth.email) {
+    throw new Error('در حالت سریع، اول دکمهٔ «اتصال فوری» را بزن تا جیمیل شناسایی شود.');
+  }
   let baseEmail = oauth.email;
   if (!baseEmail) {
     baseEmail = await fetchGmailProfile();
@@ -1844,6 +2006,8 @@ async function createGmailAliasMailbox(tag) {
 }
 
 async function gmailListMessages(mb) {
+  const oauth = await getGmailOAuth();
+  if ((oauth.mode || 'api') === 'quick') return gmailQuickListMessages();
   const q = `deliveredto:${mb.address}`;
   const data = await gmailApiFetch(
     `/messages?q=${encodeURIComponent(q)}&maxResults=20`
@@ -1872,6 +2036,8 @@ async function gmailListMessages(mb) {
 }
 
 async function gmailReadMessage(mb, messageId) {
+  const oauth = await getGmailOAuth();
+  if ((oauth.mode || 'api') === 'quick') return gmailQuickReadMessage(messageId);
   const full = await gmailApiFetch(
     `/messages/${encodeURIComponent(messageId)}?format=full`
   );
@@ -2492,11 +2658,20 @@ async function pollMailboxesForNotifications({ force = false } = {}) {
   const st = await getMailState();
   if (!st.mailboxes.length) return { ok: true, notified: 0 };
 
+  // در حالت سریع همهٔ صندوق‌های جیمیل یک فید مشترک دارند؛ اعلان فقط از صندوق اول فرستاده شود
+  const gmailQuickActive = ((await getGmailOAuth()).mode || 'api') === 'quick';
+  const firstGmailBoxId = gmailQuickActive
+    ? st.mailboxes.find((m) => getMailboxType(m) === 'gmail')?.id || null
+    : null;
+
   let notifiedCount = 0;
   let stateDirty = false;
 
   for (const mb of st.mailboxes) {
     try {
+      if (gmailQuickActive && getMailboxType(mb) === 'gmail' && mb.id !== firstGmailBoxId) {
+        continue;
+      }
       // اولین بررسی: وضعیت فعلی را مبنا می‌گیریم تا اعلان قدیمی نفرستیم
       if (!Array.isArray(mb.notifSeenIds) || !mb.notifInit) {
         const messages = await listMessagesForMailbox(mb);
@@ -2905,6 +3080,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             connected: Boolean(oauth.email),
             email: oauth.email || '',
             clientId: oauth.clientId || '',
+            mode: oauth.mode || 'api',
+            extensionId: chrome.runtime.id,
+            redirectUri: gmailRedirectUri()
+          };
+        }
+
+        case 'GMAIL_CONNECT_QUICK': {
+          const r = await connectGmailQuick();
+          return {
+            ok: true,
+            connected: true,
+            email: r.email,
+            mode: 'quick',
+            clientId: '',
             extensionId: chrome.runtime.id,
             redirectUri: gmailRedirectUri()
           };
@@ -2918,6 +3107,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             email,
             connected: true,
             clientId: oauth.clientId || '',
+            mode: oauth.mode || 'api',
             extensionId: chrome.runtime.id,
             redirectUri: gmailRedirectUri()
           };
