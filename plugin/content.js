@@ -16,6 +16,20 @@
     return String(n).replace(/\d/g, (d) => persianDigits[Number(d)]);
   }
 
+  // SVG icon system for the floating widget (no raw emojis)
+  const WIDGET_ICONS = {
+    zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+    lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    save: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+    'external-link': '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    minus: '<path d="M5 12h14"/>',
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>'
+  };
+  function wIc(name, cls = 'ic') {
+    return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${WIDGET_ICONS[name] || ''}</svg>`;
+  }
+
   function sendMsg(payload) {
     return new Promise((resolve) => {
       try {
@@ -175,6 +189,20 @@
         gap: 4px;
         transition: transform 0.1s, filter 0.15s, background 0.15s;
         color: #fff;
+      }
+      svg.ic {
+        width: 14px;
+        height: 14px;
+        flex-shrink: 0;
+        display: block;
+      }
+      .mini-btn svg.ic {
+        width: 18px;
+        height: 18px;
+      }
+      .drag-handle svg.ic {
+        width: 13px;
+        height: 13px;
       }
       .btn:active {
         transform: scale(0.95);
@@ -412,7 +440,7 @@
       const mini = document.createElement('button');
       mini.className = 'mini-btn';
       mini.title = 'کلیک برای باز شدن نوار اکانت‌ها';
-      mini.textContent = isIso ? '🔒' : '⚡';
+      mini.innerHTML = isIso ? wIc('lock') : wIc('zap');
 
       const badge = document.createElement('span');
       badge.className = 'mini-badge';
@@ -470,7 +498,7 @@
         const isoBtn = document.createElement('button');
         isoBtn.className = 'dd-open-tab';
         isoBtn.title = `باز کردن «${acc.name}» در تب مجزای همزمان`;
-        isoBtn.textContent = '🗗 تب';
+        isoBtn.innerHTML = `${wIc('external-link')}<span>تب</span>`;
         isoBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           dropdownOpen = false;
@@ -490,7 +518,7 @@
 
       const newBtn = document.createElement('button');
       newBtn.className = 'dd-item dd-new';
-      newBtn.textContent = '➕ نشست جدید (افزودن اکانت)';
+      newBtn.innerHTML = `${wIc('plus')}<span>نشست جدید (افزودن اکانت)</span>`;
       newBtn.addEventListener('click', async () => {
         isBusy = true;
         dropdownOpen = false;
@@ -509,7 +537,7 @@
     drag.className = 'drag-handle';
     drag.setAttribute('data-drag', '1');
     drag.title = 'جابه‌جایی دکمه شناور';
-    drag.textContent = '⋮⋮';
+    drag.innerHTML = wIc('grip');
     pill.appendChild(drag);
 
     const selector = document.createElement('button');
@@ -524,9 +552,7 @@
 
     const label = document.createElement('span');
     label.className = 'acc-label';
-    label.textContent = activeAcc
-      ? `${isIso ? '🔒 ' : ''}${activeAcc.name}`
-      : 'نشست جدید';
+    label.textContent = activeAcc ? activeAcc.name : 'نشست جدید';
 
     const count = document.createElement('span');
     count.className = 'acc-count';
@@ -535,6 +561,13 @@
         ? `(${toFa(activeIdx + 1)}/${toFa(accounts.length)})`
         : `(${toFa(accounts.length)})`;
 
+    if (isIso) {
+      const lockIc = document.createElement('span');
+      lockIc.style.display = 'inline-flex';
+      lockIc.style.flexShrink = '0';
+      lockIc.innerHTML = wIc('lock');
+      selector.appendChild(lockIc);
+    }
     selector.appendChild(dot);
     selector.appendChild(label);
     selector.appendChild(count);
@@ -547,7 +580,7 @@
     if (!activeAcc && !isIso) {
       const saveBtn = document.createElement('button');
       saveBtn.className = 'btn btn-save';
-      saveBtn.textContent = `💾 ذخیره اکانت ${toFa(accounts.length + 1)}`;
+      saveBtn.innerHTML = `${wIc('save')}<span>ذخیره اکانت ${toFa(accounts.length + 1)}</span>`;
       saveBtn.addEventListener('click', async () => {
         isBusy = true;
         render();
@@ -562,7 +595,7 @@
       const nextBtn = document.createElement('button');
       nextBtn.className = 'btn btn-next';
       nextBtn.title = 'سوییچ در همین تب به اکانت بعدی (Alt+Shift+S)';
-      nextBtn.textContent = '⚡ بعدی';
+      nextBtn.innerHTML = `${wIc('zap')}<span>بعدی</span>`;
       nextBtn.addEventListener('click', async () => {
         isBusy = true;
         dropdownOpen = false;
@@ -580,7 +613,7 @@
     const openIsoBtn = document.createElement('button');
     openIsoBtn.className = 'btn btn-iso';
     openIsoBtn.title = 'باز کردن اکانت بعدی در تب جدید به‌صورت همزمان و ایزوله';
-    openIsoBtn.textContent = '🗗 +تب همزمان';
+    openIsoBtn.innerHTML = `${wIc('external-link')}<span>+تب همزمان</span>`;
     openIsoBtn.addEventListener('click', async () => {
       dropdownOpen = false;
       await sendMsg({
@@ -594,7 +627,7 @@
     const minBtn = document.createElement('button');
     minBtn.className = 'btn btn-icon';
     minBtn.title = 'کوچک کردن';
-    minBtn.textContent = '—';
+    minBtn.innerHTML = wIc('minus');
     minBtn.addEventListener('click', async () => {
       dropdownOpen = false;
       currentState.widgetPos = { ...(currentState.widgetPos || {}), minimized: true };

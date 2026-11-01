@@ -1055,7 +1055,7 @@ async function updateBadgeForTab(tabId, urlStr) {
         .setBadgeBackgroundColor({ tabId, color: '#06b6d4' })
         .catch(() => {});
       await chrome.action
-        .setBadgeText({ tabId, text: `🔒${isoIdx + 1}` })
+        .setBadgeText({ tabId, text: `${isoIdx + 1}` })
         .catch(() => {});
       return;
     }

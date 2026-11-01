@@ -8,6 +8,83 @@ const COLORS = [
   '#3b82f6', '#ef4444'
 ];
 
+// ----------------------------------------------------------------------------
+// SVG icon system (Lucide-style, stroke = currentColor) — هیچ ایموجی خام در UI
+// ----------------------------------------------------------------------------
+const ICON_PATHS = {
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  pen: '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>',
+  sparkles: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+  shuffle: '<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  star: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+  'at-sign': '<circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  'skip-back': '<polygon points="19 20 9 12 19 4 19 20"/><line x1="5" x2="5" y1="19" y2="5"/>',
+  'layout-grid': '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  save: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  key: '<path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  'shield-check': '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+  package: '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+  'external-link': '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  'alert-triangle': '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-2Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  keyboard: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/>'
+};
+
+function ic(name, cls = 'ic') {
+  const body = ICON_PATHS[name] || '';
+  return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+// تزریق آیکون‌های استاتیک مشخص‌شده در popup.html با <span data-icon="..."></span>
+(function injectStaticIcons() {
+  document.querySelectorAll('span[data-icon]').forEach((el) => {
+    if (el.dataset.iconDone) return;
+    el.innerHTML = ic(el.dataset.icon, el.dataset.iconClass || 'ic');
+    el.dataset.iconDone = '1';
+  });
+})();
+
+// کپی مطمئن در پاپ‌آپ: Clipboard API + فالبک execCommand (وقتی فوکوس پاپ‌آپ افتاده)
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:-999px;left:-999px;opacity:0;pointer-events:none;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (ok) return true;
+  } catch {}
+  return false;
+}
+
 const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
 function toFa(val) {
   return String(val).replace(/\d/g, (d) => persianDigits[Number(d)]);
@@ -65,11 +142,11 @@ let mailState = {
 
 // رابط ساخت ایمیل — دقیقا مثل اپ Instant Mail: سرویس + گروه (تصادفی/دامنه/محبوب)
 const MAIL_PROVIDER_META = [
-  { key: 'hd', icon: '⚡', label: 'اینسنت میل' },
-  { key: 'hd_gmail', icon: '📧', label: 'جیمیل آنی' },
-  { key: 'temp-mail-io', icon: '🌐', label: 'Temp-Mail.io' },
-  { key: 'mail.tm', icon: '🅰', label: 'Mail.tm' },
-  { key: 'mail.gw', icon: '🅱', label: 'Mail.gw' }
+  { key: 'hd', icon: 'zap', label: 'اینسنت میل' },
+  { key: 'hd_gmail', icon: 'mail', label: 'جیمیل آنی' },
+  { key: 'temp-mail-io', icon: 'globe', label: 'Temp-Mail.io' },
+  { key: 'mail.tm', icon: 'at-sign', label: 'Mail.tm' },
+  { key: 'mail.gw', icon: 'inbox', label: 'Mail.gw' }
 ];
 
 let mailUi = { provider: 'hd', group: 'domain', domain: '' };
@@ -108,6 +185,7 @@ const els = {
   importBtn: document.getElementById('importBtn'),
   importFileInput: document.getElementById('importFileInput'),
   activeStatusText: document.getElementById('activeStatusText'),
+  isoCountText: document.getElementById('isoCountText'),
   nextAccountBtn: document.getElementById('nextAccountBtn'),
   prevAccountBtn: document.getElementById('prevAccountBtn'),
   openBatchBtn: document.getElementById('openBatchBtn'),
@@ -264,7 +342,7 @@ function renderUI() {
 
   const openIsoCount = state.openIsolatedTabs.length;
   els.isoCountBadge.classList.toggle('hidden', openIsoCount === 0);
-  els.isoCountBadge.textContent = `🔒 ${toFa(openIsoCount)} تب باز`;
+  els.isoCountText.textContent = `${toFa(openIsoCount)} تب باز`;
 
   els.googleWarning.classList.toggle('hidden', !state.isGoogleUnified);
 
@@ -287,8 +365,8 @@ function renderUI() {
     const isoIdx = state.accounts.findIndex((a) => a.id === state.isolatedAccountId);
     const isoAcc = isoIdx >= 0 ? state.accounts[isoIdx] : null;
     els.activeStatusText.textContent = isoAcc
-      ? `🔒 تب همزمان ایزوله: ${isoAcc.name} (${toFa(isoIdx + 1)})`
-      : '🔒 تب ایزوله';
+      ? `تب همزمان ایزوله: ${isoAcc.name} (${toFa(isoIdx + 1)})`
+      : 'تب ایزوله';
     els.activeStatusText.style.color = '#67e8f9';
   } else {
     const activeIdx = state.accounts.findIndex((a) => a.id === state.activeAccountId);
@@ -376,7 +454,7 @@ function renderAccountsList() {
       const isoPill = document.createElement('span');
       isoPill.className = 'pill-badge pill-iso';
       isoPill.title = 'کلیک برای رفتن به تب بازِ این اکانت';
-      isoPill.textContent = '🟢 تب باز';
+      isoPill.textContent = 'تب باز';
       isoPill.addEventListener('click', async (e) => {
         e.stopPropagation();
         await chrome.tabs.update(openIsoTabId, { active: true }).catch(() => {});
@@ -417,7 +495,7 @@ function renderAccountsList() {
       const mailBtn = document.createElement('button');
       mailBtn.className = 'mini-action';
       mailBtn.title = `باز کردن صندوق پیام ایمیل این اکانت (${acc.email || ''})`;
-      mailBtn.textContent = '📧';
+      mailBtn.innerHTML = ic('mail');
       mailBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await sendMsg({ type: 'MAIL_SELECT_INBOX', mailboxId: acc.mailboxId });
@@ -434,7 +512,7 @@ function renderAccountsList() {
     isoBtn.title = openIsoTabId
       ? `رفتن به تب باز «${acc.name}»`
       : `باز کردن همزمان «${acc.name}» در یک تب جدید و ایزوله`;
-    isoBtn.textContent = '🗗';
+    isoBtn.innerHTML = ic('external-link');
     isoBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const res = await sendMsg({
@@ -455,7 +533,7 @@ function renderAccountsList() {
     const updateBtn = document.createElement('button');
     updateBtn.className = 'mini-action';
     updateBtn.title = 'بروزرسانی کوکی‌های این اکانت با نشست فعلی تب';
-    updateBtn.textContent = '🔄';
+    updateBtn.innerHTML = ic('refresh');
     updateBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const res = await sendMsg({
@@ -475,7 +553,7 @@ function renderAccountsList() {
     const skipBtn = document.createElement('button');
     skipBtn.className = 'mini-action';
     skipBtn.title = acc.skipped ? 'برگرداندن به چرخش' : 'رد شدن موقت در چرخش';
-    skipBtn.textContent = acc.skipped ? '▶️' : '⏸';
+    skipBtn.innerHTML = ic(acc.skipped ? 'play' : 'pause');
     skipBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       await sendMsg({
@@ -491,7 +569,7 @@ function renderAccountsList() {
     const editBtn = document.createElement('button');
     editBtn.className = 'mini-action';
     editBtn.title = 'ویرایش نام، یادداشت و رنگ';
-    editBtn.textContent = '✏️';
+    editBtn.innerHTML = ic('pen');
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       openEditModal(acc);
@@ -502,7 +580,7 @@ function renderAccountsList() {
     const isConfirming = pendingDeleteId === acc.id;
     delBtn.className = 'mini-action' + (isConfirming ? ' confirm-del' : '');
     delBtn.title = 'حذف اکانت';
-    delBtn.textContent = isConfirming ? 'حذف؟' : '🗑️';
+    delBtn.innerHTML = isConfirming ? '<span style="font-size:10.5px">حذف؟</span>' : ic('trash');
     delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (pendingDeleteId !== acc.id) {
@@ -564,7 +642,7 @@ function renderServiceChips() {
     chip.type = 'button';
     chip.className =
       'im-chip' + (mailUi.provider === p.key ? ' selected' : '');
-    chip.innerHTML = `<span>${p.icon}</span> ${p.label}`;
+    chip.innerHTML = `${ic(p.icon, 'ic ic-sm')}<span>${p.label}</span>`;
     chip.addEventListener('click', async () => {
       if (mailUi.provider === p.key) return;
       mailUi.provider = p.key;
@@ -590,7 +668,7 @@ async function renderDomainGrid() {
   if (mailUi.group === 'random') {
     els.imDomainGrid.classList.add('hidden');
     els.mailCustomUser.classList.add('hidden');
-    els.createMailBtn.innerHTML = '🎲 ساخت ایمیل تصادفی';
+    els.createMailBtn.innerHTML = `${ic('shuffle')}<span>ساخت ایمیل تصادفی</span>`;
     return;
   }
 
@@ -601,7 +679,7 @@ async function renderDomainGrid() {
 
   els.imDomainGrid.classList.remove('hidden');
   els.mailCustomUser.classList.remove('hidden');
-  els.createMailBtn.innerHTML = '✨ ساخت ایمیل جدید';
+  els.createMailBtn.innerHTML = `${ic('sparkles')}<span>ساخت ایمیل جدید</span>`;
 
   if (!list.length) {
     const err = document.createElement('div');
@@ -706,7 +784,7 @@ function renderMailUI() {
 els.createMailBtn.addEventListener('click', async () => {
   els.createMailBtn.disabled = true;
   const originalLabel = els.createMailBtn.innerHTML;
-  els.createMailBtn.innerHTML = '⏳ در حال ساخت...';
+  els.createMailBtn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال ساخت...</span>`;
 
   const isRandom = mailUi.group === 'random';
   const res = await sendMsg({
@@ -729,12 +807,12 @@ els.createMailBtn.addEventListener('click', async () => {
     renderMessagesList();
     renderUI();
 
-    try {
-      await navigator.clipboard.writeText(res.mailbox.address);
-      showToast(`ایمیل ساخته و کپی شد: ${res.mailbox.address}`);
-    } catch {
-      showToast(`ایمیل جدید ساخته شد ✅`);
-    }
+    const copied = await copyText(res.mailbox.address);
+    showToast(
+      copied
+        ? `ایمیل ساخته و کپی شد: ${res.mailbox.address}`
+        : 'ایمیل جدید ساخته شد'
+    );
   } else {
     showToast(res.error || 'خطا در ساخت ایمیل', true);
   }
@@ -771,17 +849,31 @@ els.deleteMailboxBtn.addEventListener('click', async () => {
   }
 });
 
+const COPY_EMAIL_LABEL = () =>
+  `${ic('copy')}<span>کپی ایمیل</span>`;
+
 els.copyEmailBtn.addEventListener('click', async () => {
   const active = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
   if (!active) return;
-  await navigator.clipboard.writeText(active.address).catch(() => {});
-  showToast('آدرس ایمیل کپی شد 📋');
+
+  const ok = await copyText(active.address);
+  if (ok) {
+    els.copyEmailBtn.innerHTML = `${ic('check')}<span>کپی شد!</span>`;
+    els.copyEmailBtn.classList.add('copied-flash');
+    setTimeout(() => {
+      els.copyEmailBtn.innerHTML = COPY_EMAIL_LABEL();
+      els.copyEmailBtn.classList.remove('copied-flash');
+    }, 1400);
+    showToast('آدرس ایمیل کپی شد');
+  } else {
+    showToast('کپی خودکار ناموفق بود؛ آدرس را انتخاب و Ctrl+C بزنید.', true);
+  }
 });
 
 els.fillEmailBtn.addEventListener('click', async () => {
   const active = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
   if (!active) return;
-  await navigator.clipboard.writeText(active.address).catch(() => {});
+  await copyText(active.address);
   const res = await sendMsg({
     type: 'MAIL_FILL_IN_PAGE',
     tabId: state.tabId,
@@ -789,7 +881,7 @@ els.fillEmailBtn.addEventListener('click', async () => {
     fieldKind: 'email'
   });
   if (res.ok) {
-    showToast('آدرس ایمیل در کادر سایت درج شد ✍️');
+    showToast('آدرس ایمیل در کادر سایت درج شد');
   } else {
     showToast(res.error || 'ایمیل کپی شد (دستی Paste کنید).', true);
   }
@@ -799,7 +891,7 @@ async function refreshInboxMessages(silent = false) {
   if (!mailState.activeMailboxId) return;
   if (!silent) {
     els.refreshInboxBtn.disabled = true;
-    els.inboxPollStatus.textContent = '⏳ در حال بررسی...';
+    els.inboxPollStatus.textContent = 'در حال بررسی...';
   }
 
   const res = await sendMsg({
@@ -808,7 +900,7 @@ async function refreshInboxMessages(silent = false) {
   });
 
   els.refreshInboxBtn.disabled = false;
-  els.inboxPollStatus.textContent = '● زنده';
+  els.inboxPollStatus.textContent = 'زنده';
 
   if (res.ok) {
     mailState.messages = res.messages || [];
@@ -850,7 +942,7 @@ function renderMessagesList() {
     if (m.otpCode) {
       const otpBtn = document.createElement('button');
       otpBtn.className = 'msg-otp-btn';
-      otpBtn.textContent = `🔑 کپی و درج کد تأیید: ${m.otpCode}`;
+      otpBtn.innerHTML = `${ic('key', 'ic ic-sm')}<span>کپی و درج کد تأیید: ${m.otpCode}</span>`;
       otpBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
         await copyAndFillOtp(m.otpCode);
@@ -864,7 +956,7 @@ function renderMessagesList() {
 }
 
 async function copyAndFillOtp(code) {
-  await navigator.clipboard.writeText(code).catch(() => {});
+  const ok = await copyText(code);
   const res = await sendMsg({
     type: 'MAIL_FILL_IN_PAGE',
     tabId: state.tabId,
@@ -872,9 +964,11 @@ async function copyAndFillOtp(code) {
     fieldKind: 'otp'
   });
   if (res.ok) {
-    showToast(`کد ${code} کپی و در سایت درج شد! ✅`);
-  } else {
+    showToast(`کد ${code} کپی و در سایت درج شد!`);
+  } else if (ok) {
     showToast(`کد ${code} کپی شد! (Ctrl+V بزنید)`);
+  } else {
+    showToast('کپی ناموفق بود؛ کد را دستی وارد کنید.', true);
   }
 }
 
@@ -923,17 +1017,17 @@ async function openMessageModal(messageId) {
     msg.links.slice(0, 3).forEach((url, idx) => {
       const btn = document.createElement('button');
       btn.className = 'verify-link-btn';
-      btn.textContent =
+      btn.innerHTML =
         idx === 0
-          ? '🔗 باز کردن لینک تأیید در تب فعلی'
-          : `🔗 باز کردن لینک ${toFa(idx + 1)}`;
+          ? `${ic('shield-check')}<span>باز کردن لینک تأیید در تب جدید</span>`
+          : `${ic('link')}<span>باز کردن لینک ${toFa(idx + 1)} (تب جدید)</span>`;
       btn.title = url;
       btn.addEventListener('click', async () => {
-        if (state.tabId) {
-          await chrome.tabs.update(state.tabId, { url });
-        } else {
-          await chrome.tabs.create({ url });
-        }
+        // همیشه تب جدید — باز کردن روی تب فعلی صفحه ثبت‌نام را نابود می‌کند
+        // و می‌تواند توکن یک‌بارمصرف لینک تأیید را باطل کند.
+        try {
+          await chrome.tabs.create({ url, active: true });
+        } catch {}
         window.close();
       });
       els.mailModalLinks.appendChild(btn);
@@ -996,7 +1090,7 @@ els.nextAccountBtn.addEventListener('click', async () => {
     direction: 1
   });
   if (res.ok) {
-    showToast(`جابه‌جایی به «${res.accountName}» انجام شد ⚡`);
+    showToast(`جابه‌جایی به «${res.accountName}» انجام شد`);
     await loadState();
   } else {
     showToast(res.error || 'خطا در جابه‌جایی', true);
@@ -1030,7 +1124,7 @@ els.openBatchBtn.addEventListener('click', async () => {
     count: countVal
   });
   if (res.ok) {
-    showToast(`در حال باز کردن همزمان ${toFa(res.openingCount)} تب مجزا... 🚀`);
+    showToast(`در حال باز کردن همزمان ${toFa(res.openingCount)} تب مجزا...`);
     setTimeout(() => window.close(), 650);
   } else {
     els.openBatchBtn.disabled = false;
@@ -1058,7 +1152,7 @@ async function saveCurrentAccount() {
   if (res.ok) {
     els.accountNameInput.value = '';
     els.accountNoteInput.value = '';
-    showToast(`«${res.account.name}» با موفقیت ذخیره شد ✅`);
+    showToast(`«${res.account.name}» با موفقیت ذخیره شد`);
     await loadState();
   } else {
     showToast(res.error || 'خطا در ذخیره اکانت', true);
