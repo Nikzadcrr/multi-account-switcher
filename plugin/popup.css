@@ -2033,6 +2033,16 @@ svg.ic-xs {
   line-height: 1.9;
 }
 
+.gw-error-hint b {
+  display: block;
+  margin: 8px 0 2px;
+  color: #dbeafe;
+}
+
+.gw-error-hint > b:first-child {
+  margin-top: 0;
+}
+
 .gw-error-hint ol {
   margin: 4px 18px 0 0;
   padding: 0;

@@ -433,13 +433,20 @@
         </ol>
         <div id="gwError" class="gw-error hidden"></div>
         <div id="gwErrorHint" class="gw-error-hint hidden">
-          <b>اگر پنجرهٔ گوگل خطای <span dir="ltr">Error 400: redirect_uri_mismatch</span> نشان داد:</b>
+          <b>اگر خطای <span dir="ltr">Error 400: redirect_uri_mismatch</span> دیدی:</b>
           <ol>
             <li>کنسول گوگل → <span dir="ltr">APIs &amp; Services → Credentials</span> → روی همان OAuth client کلیک کن.</li>
             <li>نوع <b>Chrome extension</b>: فیلد <span dir="ltr">Application ID</span> باید دقیقاً برابر «Extension ID» همین ویزارد باشد (کپی با دکمهٔ همین مرحله).</li>
             <li>نوع <b>Web application</b>: در <span dir="ltr">Authorized redirect URIs</span> دقیقاً همان «Redirect URI» همین ویزارد را اضافه کن — با اسلش انتهایی <span dir="ltr">/</span>.</li>
             <li>نوع <b>Desktop app</b> کار نمی‌کند؛ یک کلاینت جدید از نوع Chrome extension بساز.</li>
             <li>Save بزن، ۱ تا ۲ دقیقه صبر کن، پنجرهٔ قبلی گوگل را ببند و دوباره «اتصال» را بزن.</li>
+          </ol>
+          <b>اگر خطای <span dir="ltr">Error 403: access_denied</span> دیدی:</b>
+          <ol>
+            <li>یعنی جیمیلت هنوز «Test user» پروژه نیست. کنسول گوگل → <span dir="ltr">APIs &amp; Services → OAuth consent screen</span> (یا <span dir="ltr">Google Auth Platform → Audience</span>).</li>
+            <li>بخش <span dir="ltr">Test users</span> → <span dir="ltr">Add Users</span> → ایمیلِ همان جیمیلی که در پنجرهٔ ورود انتخاب می‌کنی را اضافه کن → Save.</li>
+            <li>پنجرهٔ خطا را ببند و دوباره «اتصال» را بزن.</li>
+            <li>اگر صفحهٔ «Google hasn't verified this app» آمد: <span dir="ltr">Advanced → Go to app (unsafe) → Allow</span>.</li>
           </ol>
         </div>
         <div class="modal-actions">
