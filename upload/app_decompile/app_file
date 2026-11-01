@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Instant Mail 8.6.0.apk - TempFile.org</title>
+    
+    <meta name="description" content="52.28 MB Android APK • Free download, no signup • Auto-deletes after expiry">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://tempfile.org/XxLUrA9kpkN">
+    <meta property="og:title" content="Instant Mail 8.6.0.apk - TempFile.org">
+    <meta property="og:description" content="52.28 MB Android APK • Free download, no signup • Auto-deletes after expiry">
+    <meta property="og:site_name" content="TempFile.org">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:image" content="https://tempfile.org/images/tempfile_shared_banner_1200x630.jpg">
+    <meta property="og:image:type" content="image/jpeg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="TempFile.org: a file was shared with you">
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Instant Mail 8.6.0.apk - TempFile.org">
+    <meta name="twitter:description" content="52.28 MB Android APK • Free download, no signup • Auto-deletes after expiry">
+    <meta name="twitter:image" content="https://tempfile.org/images/tempfile_shared_banner_1200x630.jpg">
+    <meta name="twitter:image:alt" content="TempFile.org: a file was shared with you">
+
+    <link rel="apple-touch-icon" href="https://tempfile.org/apple-touch-icon.png">
+    <link rel="manifest" href="https://tempfile.org/manifest.webmanifest">
+    <link rel="shortcut icon" href="https://tempfile.org/favicon.png"/>
+    
+    <!-- Multiple format favicon support -->
+    <link rel="icon" type="image/svg+xml" href="https://tempfile.org/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://tempfile.org/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="https://tempfile.org/favicon-16x16.png">
+    <link rel="icon" type="image/x-icon" href="https://tempfile.org/favicon.ico">
+
+    
+    <!-- Additional SEO Meta Tags -->
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#ffffff">
+    <!-- Theme: runs before first paint so there is no flash of the wrong theme.
+         Saved choice (localStorage "tf-user-theme") wins, otherwise the system setting.
+         Colours must match THEME_COLORS in public/js/pwa.js and the CSS. -->
+    <script>
+    (function () {
+      try {
+        var t = null;
+        try { t = localStorage.getItem('tf-user-theme'); } catch (e) {}
+        if (t !== 'dark' && t !== 'light') {
+          t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+        var m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', t === 'dark' ? '#1a1a1a' : '#ffffff');
+      } catch (e) {}
+    })();
+    </script>
+    <meta name="application-name" content="TempFile.org">
+    <meta name="apple-mobile-web-app-title" content="TempFile.org">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://tempfile.org/XxLUrA9kpkN">
+   
+    <link rel="stylesheet" href="/css/header.css?ver=1.0.1" media="all">
+    <link rel="stylesheet" href="/css/footer.css?ver=1.0.2" media="all">
+    <link rel="stylesheet" id='interstitial-style-css' href="/css/interstitial.css?ver=6.5.11">
+    <link rel="stylesheet" href="/css/pwa.css?ver=2.0.1" media="all">
+    <link rel="stylesheet" href="/css/support.css?ver=1.0.1" media="all">
+    <link rel="stylesheet" href="/css/badges.css?ver=1.1.1" media="all">
+    <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-TQHHWR0XPQ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-TQHHWR0XPQ');
+</script>
+
+
+<script type="text/javascript">
+    function downloadJsAtOnload() {
+        setTimeout(function downloadJs() {
+            var element = document.createElement("script");
+            element.async = true;
+            element.crossOrigin = "anonymous";
+            element.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9211929660275588";
+            document.body.appendChild(element);
+        }, 2400);
+    };
+    if (window.addEventListener)
+        window.addEventListener("load", downloadJsAtOnload, false);
+    else if (window.attachEvent)
+        window.attachEvent("onload", downloadJsAtOnload);
+    else window.onload = downloadJsAtOnload;
+</script>
+
+
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-top">
+                <div class="logo-section">
+                    <div class="logo">
+                        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                            <circle cx="12" cy="12" r="2"></circle>
+                            <line x1="8" y1="14" x2="16" y2="14"></line>
+                            <line x1="8" y1="16" x2="16" y2="16"></line>
+                        </svg>
+                        <span class="logo-text">TempFile.org</span>
+                    </div>
+                    <div class="tagline-row">
+                        <div class="tagline">Upload • Share • Auto-Delete</div>
+                        <a class="sb-link" href="https://status.tempfile.org/?utm_source=tempfile.org&amp;utm_medium=status_dot" title="Live system status">Status <img src="https://status.tempfile.org/badge.svg" width="14" height="14" alt="" onerror="this.remove()"></a>
+                    </div>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-buttons">
+                        <a href="/" class="nav-btn">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9,22 9,12 15,12 15,22"></polyline>
+                            </svg>
+                            Home
+                        </a>
+                        <a href="/about" class="nav-btn">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <path d="M12 17h.01"></path>
+                            </svg>
+                            About
+                        </a>
+                        <a href="/terms" class="nav-btn">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14,2 14,8 20,8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                            </svg>
+                            Terms
+                        </a>
+                        <a href="/privacy" class="nav-btn">
+                            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
+                                <path d="m7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                            Privacy
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="file-title">
+                <div class="file-icon" id="fileIcon">📄</div>
+                <div class="file-name" id="fileName">Instant Mail 8.6.0.apk</div>
+            </div>
+        </div>
+
+        <div class="countdown-section" id="countdownSection">
+            <div class="countdown-text">Preparing your download...</div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="countdown-display" id="countdownDisplay">5s</div>
+        </div>
+
+        
+
+        <div class="file-info">
+            <div class="info-item">
+                <div class="info-label">File Size</div>
+                <div class="info-value" id="fileSize">52.28 MB</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">File Type</div>
+                <div class="info-value" id="fileType">Android APK</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Uploaded</div>
+                <div class="info-value" id="uploadTime">26 minutes ago</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Expires</div>
+                <div class="info-value">Expiring in <span class="live-countdown" id="expiryTime">{{expiryTime}}</span></div>
+            </div>
+            <div class="info-item report-item">
+                <div class="info-label">Report Issue</div>
+                <div class="info-value">
+                    <a href="/report?url=https%3A%2F%2Ftempfile.org%2FXxLUrA9kpkN%2F" class="report-link" id="reportBtn">
+                        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                            <line x1="4" y1="22" x2="4" y2="15"></line>
+                        </svg>
+                        Report Content
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        
+
+        
+        <div class="security-section" id="securitySection">
+            <div class="security-title" id="securityTitle">
+                <span id="securityIcon"></span><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="23 4 23 10 17 10" />
+  <polyline points="1 20 1 14 7 14" />
+  <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+</svg>&nbsp;Security Scan In Progress...
+            </div>
+            <div class="security-checks" id="securityChecks">
+                <div class="security-check scanning">
+                    <span class="scan-icon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                </svg></span>
+                    Scanning for viruses...
+                </div>
+                <div class="security-check scanning">
+                    <span class="scan-icon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="11" cy="11" r="8" />
+  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+</svg>
+</span>
+                    Checking content policy...
+                </div>
+                <div class="security-check scanning">
+                    <span class="scan-icon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+</svg>
+️</span>
+                    Verifying file integrity...
+                </div>
+                <div class="security-check scanning">
+                    <span class="scan-icon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
+                                <path d="m7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg></span>
+                    Preparing encryption...
+                </div>
+            </div>
+            <div class="scan-progress">
+                <div class="scan-progress-bar" id="scanProgressBar"></div>
+            </div>
+            <div class="scanning-text" id="scanningText">Analyzing file signature...</div>
+        </div>
+        
+
+        <div class="download-section">
+            <button class="download-btn" id="downloadBtn" disabled>
+                <span class="download-icon" id="downloadIcon"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 5v14" />
+  <path d="M6 13l6 6 6-6" />
+</svg>
+</span>
+                <span id="downloadText">Preparing Download...</span>
+            </button>
+            <button class="retry-btn" id="retryBtn" style="display: none;" onclick="retryDownload()">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <polyline points="23 4 23 10 17 10" />
+  <polyline points="1 20 1 14 7 14" />
+  <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+</svg>
+ Retry Download
+            </button>
+            <div class="sb-retry" id="retryStatus" hidden>
+                <span>Download not starting? Service status:</span>
+                <a class="sb-chip" href="https://status.tempfile.org/?utm_source=tempfile.org&amp;utm_medium=status_pill" target="_blank" rel="noopener" title="File downloads status"><img data-src="https://status.tempfile.org/badge/service/downloads.svg" height="20" alt="File downloads status"></a>
+            </div>
+        </div>
+
+        
+        
+        <!-- AdSense Banner -->
+        <div class="ad-container" id="adContainer">
+            <div class="ad-label">Advertisement</div>
+            <ins class="adsbygoogle"
+                 style="display:block"
+                 data-ad-client="ca-pub-9211929660275588"
+                 data-ad-slot="8529446842"
+                 data-ad-format="auto"
+                 data-full-width-responsive="true"></ins>
+            <script>
+                 (adsbygoogle = window.adsbygoogle || []).push({});
+            </script>
+        </div>
+        
+        
+
+        <div class="link-section">
+            <div class="link-title">Direct Download Link</div>
+            <div class="link-container">
+                <input type="text" class="link-input" id="directLink" value="https://tempfile.org/XxLUrA9kpkN/download" readonly>
+                <button class="copy-btn" onclick="copyLink()">Copy</button>
+            </div>
+        </div>
+
+
+ <div class="article-container">
+            <h1>Android APK Temp File </h1>
+            
+            
+            <div class="filetype-card">
+                <div class="filetype-header">
+                    <div class="filetype-icon">📱</div>
+                    <div class="filetype-title">
+                        <h3 class="filetype-name">Android Package</h3>
+                        <p class="filetype-description">Android Application Package - Android app installer</p>
+                    </div>
+                </div>
+                <div class="filetype-content">
+                    <p>APK files contain Android applications ready for installation on Android devices. These packages include all app resources, code, and manifest information needed to run the application.</p>
+                    
+                    <div class="filetype-features">
+                        
+                        <div class="filetype-feature">
+                            <span class="feature-icon">📱</span>
+                            <span>Android app installer</span>
+                        </div>
+                        
+                        <div class="filetype-feature">
+                            <span class="feature-icon">🏪</span>
+                            <span>Play Store format</span>
+                        </div>
+                        
+                        <div class="filetype-feature">
+                            <span class="feature-icon">📦</span>
+                            <span>Complete app package</span>
+                        </div>
+                        
+                        <div class="filetype-feature">
+                            <span class="feature-icon">🔧</span>
+                            <span>Side-loading support</span>
+                        </div>
+                        
+                    </div>
+                </div>
+                <div class="tips-section">
+                    <div class="tips-title"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 3v5h5"></path>
+                        <path d="M3 12h18l-3-3"></path>
+                        <path d="M21 21v-5h-5"></path>
+                        <path d="M21 12H3l3 3"></path>
+                    </svg> Viewing Tips</div>
+                    <div class="tips-content">Install on Android devices through Settings &gt; Security &gt; Unknown Sources. Always verify app sources for security. Use APK analyzers to inspect contents.</div>
+                </div>
+            </div>
+            
+            
+            <div class="intro-box">
+                <p><strong>TempFile.org</strong> provides secure, temporary file hosting with automatic deletion. Upload files up to 100MB, choose expiration times (1-48 hours), and share instantly without registration. Perfect for secure document sharing, large file transfers, and temporary collaboration.</p>
+            </div>
+
+            <div class="security-alert">
+                <strong><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
+                                <path d="m7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg> Security First:</strong> All uploads are virus scanned and HTTPS encrypted. Files auto-delete after expiration for maximum privacy. Only save files from trusted sources and always scan files with your antivirus.
+            </div>
+
+            <h2>How Temp File Works</h2>
+            <p>TempFile.org offers a privacy-first approach to file sharing. Upload files directly from your device or import from URLs, set expiration times between 1-48 hours, and share generated links. Files are automatically and permanently deleted when expired, ensuring no long-term data storage.</p>
+
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h3><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                            </svg> Fast & Secure</h3>
+                    <p>Chunked uploads for reliability, automatic virus scanning, and HTTPS encryption protect your files during transfer and storage.</p>
+                </div>
+                <div class="feature-card">
+                    <h3><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <rect width="18" height="11" x="3" y="11" rx="2" ry="2"></rect>
+                                <path d="m7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg> Privacy Focused</h3>
+                    <p>No registration required, no tracking, automatic deletion, and no third-party analytics ensure maximum privacy protection.</p>
+                </div>
+                <div class="feature-card">
+                    <h3><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="m9 12 2 2 4-4"></path>
+                            </svg> Completely Free</h3>
+                    <p>100MB files, 200 upload requests per hour (up to 20 files each), multiple expiration options - all free with no hidden costs or premium plans.</p>
+                </div>
+                <div class="feature-card">
+                    <h3><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                            </svg> Universal Access</h3>
+                    <p>Works on all devices and browsers. Upload locally or import from URLs for maximum flexibility and convenience.</p>
+                </div>
+            </div>
+
+            <h2>Tips for Safe File Sharing</h2>
+
+            <h3>Choosing Expiration Times</h3>
+            <p>Select <span class="highlight">1 hour</span> for sensitive documents, <span class="highlight">6-24 hours</span> for standard sharing, or <span class="highlight">48 hours</span> for extended collaboration. Shorter times provide better security for confidential files.</p>
+
+            <h3>Upload Methods</h3>
+            <ul>
+                <li><strong>Local Upload:</strong> Drag and drop files directly from your device (recommended for sensitive content)</li>
+                <li><strong>URL Import:</strong> import and host files from web addresses (convenient for public content)</li>
+                <li><strong>File Limits:</strong> 100MB per file, 200 upload requests per hour per user (up to 20 files per request)</li>
+            </ul>
+
+            <h3>Security Best Practices</h3>
+            <ul>
+                <li>Only open/save files from sources you trust</li>
+                <li>Scan all files with updated antivirus software</li>
+                <li>Use shorter expiration times for sensitive documents</li>
+                <li>Share links only with intended recipients</li>
+                <li>Keep backup copies of important files before they expire</li>
+            </ul>
+
+            <div class="instructions-box">
+                <h2>Instructions</h2>
+                
+                <h3>How to Upload & Share</h3>
+                <ol>
+                    <li>Choose local upload or URL import method</li>
+                    <li>Select expiration time (1, 6, 24, or 48 hours)</li>
+                    <li>Upload completes with virus scanning</li>
+                    <li>Copy and share the generated link</li>
+                </ol>
+
+                <h3>File Management</h3>
+                <p><strong>Expiration:</strong> Files automatically delete when time expires - no extensions possible for security.</p>
+                <p><strong>Early Deletion:</strong> Use the "My Files" list in the same browser session to delete files early.</p>
+                <p><strong>Re-uploading:</strong> Lost links cannot be recovered - re-upload files with new expiration times if needed.</p>
+            </div>
+
+            <div class="faq-compact">
+                <h2>FAQ</h2>
+                
+                <div class="faq-item">
+                    <div class="faq-question">Why do files expire automatically?</div>
+                    <div class="faq-answer">Automatic expiration protects your privacy by ensuring files don't remain online indefinitely, reducing security risks and unauthorized access.</div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">Are my files private and secure?</div>
+                    <div class="faq-answer">Yes - HTTPS encryption, automatic virus scanning, no user tracking, and automatic deletion ensure maximum privacy and security.</div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">What are the upload limits?</div>
+                    <div class="faq-answer">100MB maximum per file, 200 upload requests per hour per user, with up to 20 files per request. Both local files and URL imports count toward these limits.</div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">Can I extend expiration times?</div>
+                    <div class="faq-answer">No, expiration times cannot be changed after upload for security reasons. Re-upload files if longer access is needed.</div>
+                </div>
+                
+                <div class="faq-item">
+                    <div class="faq-question">What file types are supported?</div>
+                    <div class="faq-answer">All legitimate file types are supported, but content must comply with terms of service. Adult content, malware, and illegal material are prohibited.</div>
+                </div>
+            </div>
+
+            <h2>Common Uses</h2>
+            <div class="no-break">
+                <p>TempFile.org works great for business document sharing, educational resources, collaborative projects, large file transfers, temporary backups, and cross-platform file transfers. Content moderation ensures appropriate use.</p>
+
+                <p><strong>Remember:</strong> Always verify file sources, scan files, and choose appropriate expiration times based on your security needs.</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Files auto-delete • No signup • Secure hosting</p>
+        </footer>
+    </div>
+    
+        <!-- Theme Toggle Button -->
+    <button type="button" class="theme-toggle" id="themeToggle" aria-label="Switch to dark mode" hidden>
+        <svg class="theme-icon ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="theme-icon ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <span class="lbl-dark">Dark</span><span class="lbl-light">Light</span>
+    </button>
+    
+    <script>
+        // page data
+        const templateData = {
+            fileId: "XxLUrA9kpkN",
+            fileName: "Instant Mail 8.6.0.apk",
+            fileSize: "52.28 MB",
+            fileType: "Android APK",
+            mimeType: "application/vnd.android.package-archive",
+            uploadTime: "26 minutes ago",
+            expiryTime: 1793509751918,
+            downloadUrl: "https://tempfile.org/XxLUrA9kpkN/download",
+            countdownSeconds: 5,
+            showAds: true,
+            virusScan: true
+        };
+
+        let countdownTimer;
+        let expiryUpdateTimer;
+        let retryTimer;
+
+        function getFileIcon(mimeType) {
+            if (mimeType.startsWith('image/')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>️';
+            if (mimeType.startsWith('video/')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>';
+            if (mimeType.startsWith('audio/')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>';
+            if (mimeType.includes('pdf')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M4 4h16v16H6.5A2.5 2.5 0 0 0 4 22z" /></svg>';
+            if (mimeType.includes('zip') || mimeType.includes('rar')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.73z" /><path d="M3.3 7.5L12 12l8.7-4.5" /><path d="M12 22V12" /></svg>';
+            if (mimeType.includes('word')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></svg>';
+            if (mimeType.includes('excel')) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="8" /><rect x="10" y="9" width="4" height="11" /><rect x="17" y="5" width="4" height="15" /></svg>';
+            return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" /><polyline points="14 2 14 8 20 8" /></svg>';
+        }
+
+        function getTimeRemaining(expiryTime) {
+            const now = Date.now();
+            const difference = expiryTime - now;
+
+            if (difference <= 0) {
+                return { text: 'Expired', isExpired: true, className: 'expired' };
+            }
+
+            const seconds = Math.floor(difference / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            let text, className;
+
+            if (days > 0) {
+                const remainingHours = hours % 24;
+                text = `${days}d ${remainingHours}h`;
+                className = days > 1 ? 'expires-safe' : 'expires-soon';
+            } else if (hours > 0) {
+                const remainingMinutes = minutes % 60;
+                text = `${hours}h ${remainingMinutes}m`;
+                className = hours > 2 ? 'expires-soon' : 'expires-critical';
+            } else if (minutes > 0) {
+                text = `${minutes}m`;
+                className = 'expires-critical';
+            } else {
+                text = `${seconds}s`;
+                className = 'expires-critical';
+            }
+
+            return { text, isExpired: false, className };
+        }
+
+        function updateExpiryDisplay() {
+            const expiryElement = document.getElementById('expiryTime');
+            const timeInfo = getTimeRemaining(templateData.expiryTime);
+            
+            expiryElement.textContent = timeInfo.text;
+            expiryElement.className = `live-countdown ${timeInfo.className}`;
+            
+            if (timeInfo.isExpired) {
+                expiryElement.textContent = 'File Expired';
+                document.getElementById('downloadBtn').disabled = true;
+            }
+        }
+
+        function startVirusScan() {
+            const securitySection = document.getElementById('securitySection');
+            if (!securitySection) return;
+            const securityTitle = document.getElementById('securityTitle');
+            const securityIcon = document.getElementById('securityIcon');
+            const securityChecks = document.getElementById('securityChecks');
+            const scanProgressBar = document.getElementById('scanProgressBar');
+            const scanningText = document.getElementById('scanningText');
+            
+            securitySection.classList.add('scanning');
+            securityTitle.classList.add('scanning');
+            
+            const scanSteps = [
+                { progress: 25, text: "Analyzing file signature...", duration: 800 },
+                { progress: 50, text: "Deep scanning for threats...", duration: 1200 },
+                { progress: 75, text: "Checking against virus database...", duration: 900 },
+                { progress: 100, text: "Finalizing security verification...", duration: 600 }
+            ];
+            
+            let currentStep = 0;
+            
+            function runScanStep() {
+                if (currentStep < scanSteps.length) {
+                    const step = scanSteps[currentStep];
+                    scanProgressBar.style.width = step.progress + '%';
+                    scanningText.textContent = step.text;
+                    
+                    setTimeout(() => {
+                        currentStep++;
+                        runScanStep();
+                    }, step.duration);
+                } else {
+                    // Scan completed - show verified status
+                    setTimeout(() => {
+                        securitySection.classList.remove('scanning');
+                        securityTitle.classList.remove('scanning');
+                        securityIcon.textContent = '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>️';
+                        securityTitle.innerHTML = '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>&nbsp;Security & Safety Verified';
+                        // securityTitle.style.color = '#166534';
+                        
+                        // Update all checks to completed
+                        const checks = document.querySelectorAll('.security-check');
+                        const completedChecks = [
+                            { icon: '✓', text: 'Virus scan completed' },
+                            { icon: '✓', text: 'Content policy compliant' },
+                            { icon: '✓', text: 'Safe file verified' },
+                            { icon: '✓', text: 'Encrypted transmission' }
+                        ];
+                        
+                        checks.forEach((check, index) => {
+                            check.classList.remove('scanning');
+                            // check.style.color = '#166534';
+                            check.innerHTML = `<span class="check-icon">${completedChecks[index].icon}</span>${completedChecks[index].text}`;
+                        });
+                        
+                        // Hide progress bar and scanning text
+                        document.querySelector('.scan-progress').style.display = 'none';
+                        scanningText.style.display = 'none';
+                    }, 500);
+                }
+            }
+            
+            runScanStep();
+        }
+
+        function startCountdown() {
+            let timeLeft = templateData.countdownSeconds;
+            const progressBar = document.getElementById('progressBar');
+            const countdownDisplay = document.getElementById('countdownDisplay');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const downloadText = document.getElementById('downloadText');
+            
+            countdownTimer = setInterval(() => {
+                timeLeft--;
+                const progress = ((templateData.countdownSeconds - timeLeft) / templateData.countdownSeconds) * 100;
+                progressBar.style.width = progress + '%';
+                countdownDisplay.textContent = timeLeft + 's';
+                
+                if (timeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    document.getElementById('countdownSection').style.display = 'none';
+                    downloadBtn.disabled = false;
+                    downloadText.innerHTML = ' Download File';
+                    
+                    // Show image preview if it exists
+                    const imagePreview = document.getElementById('imagePreview');
+                    if (imagePreview) {
+                        imagePreview.style.display = 'block';
+                    }
+                }
+            }, 1000);
+        }
+
+        function handleDownload() {
+            const downloadBtn = document.getElementById('downloadBtn');
+            const downloadText = document.getElementById('downloadText');
+            const downloadIcon = document.getElementById('downloadIcon');
+            const retryBtn = document.getElementById('retryBtn');
+            
+            // Update button appearance
+            downloadBtn.classList.add('download-started');
+            downloadBtn.disabled = true;
+            downloadText.textContent = 'Download Started';
+            downloadIcon.innerHTML = '<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>';
+            downloadIcon.classList.add('loading');
+            
+            // Start the actual download
+            window.location.href = templateData.downloadUrl;
+            
+            // Show retry button after 7 seconds
+            retryTimer = setTimeout(() => {
+                retryBtn.style.display = 'block';
+                showRetryStatus();
+            }, 7000);
+        }
+
+        // Next to the Retry button, show the live "File downloads" badge. It is only requested now,
+        // so it is current, and it quietly removes itself if the status page cannot be reached.
+        function showRetryStatus() {
+            const box = document.getElementById('retryStatus');
+            if (!box) return;
+            const img = box.querySelector('img');
+            img.onload = function () { box.hidden = false; };
+            img.onerror = function () { box.remove(); };
+            img.src = img.getAttribute('data-src');
+        }
+
+        function retryDownload() {
+            // Simply refresh the page to restart the download process
+            window.location.reload();
+        }
+        
+        function initializePage() {
+            // Update file icon if not already set by template
+            const fileIconEl = document.getElementById('fileIcon');
+            if (false || !fileIconEl.textContent.trim()) {
+                fileIconEl.innerHTML = getFileIcon(templateData.mimeType);
+            }
+            
+            // Set up download button
+            document.getElementById('downloadBtn').onclick = handleDownload;
+            
+            // Update expiry time display
+            updateExpiryDisplay();
+            expiryUpdateTimer = setInterval(updateExpiryDisplay, 1000);
+            
+            // Start countdown
+            startCountdown();
+            
+            // Start virus scan
+            if (document.getElementById('securitySection')) {
+                    startVirusScan();
+                }
+        }
+
+        function copyLink() {
+            const linkInput = document.getElementById('directLink');
+            linkInput.select();
+            document.execCommand('copy');
+            
+            const copyBtn = document.querySelector('.copy-btn');
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            copyBtn.style.background = '#22c55e';
+            
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+            }, 2000);
+        }
+
+        // Initialize the page when DOM is loaded
+        document.addEventListener('DOMContentLoaded', initializePage);
+
+        // Clean up timers when page is unloaded
+        window.addEventListener('beforeunload', () => {
+            if (countdownTimer) clearInterval(countdownTimer);
+            if (expiryUpdateTimer) clearInterval(expiryUpdateTimer);
+            if (retryTimer) clearTimeout(retryTimer);
+        });
+    </script>
+    <script defer src="/js/pwa.js?ver=2.0.0"></script>
+    <script defer src="/js/support.js?ver=1.0.0"></script>
+</body>
+</html>

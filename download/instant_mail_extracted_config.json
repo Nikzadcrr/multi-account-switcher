@@ -1,0 +1,97 @@
+{
+  "appName": "Instant Mail",
+  "appId": "com.temporary.email.pro",
+  "appVersion": "8.6.0 (runtimeVersion 80, expo SDK 54, hermes bytecode v96)",
+  "encryptKey": "ao-sq-=x-5b-4*-Bz",
+  "revenuecatApiKey": "goog_XzoXtKPXiaxCpjIdtLSgvucXbSe",
+  "revenuecatPermission": "premium",
+  "remoteConfig": {
+    "hdDomainsStr": "gmail10p.com,oletters.com,oemails.com,oegmail.com,suiemail.com,voewo.com,yanemail.com,tempmail.edu.pl,rommiui.com",
+    "hdGmailDomainsStr": "+gmail.com,gmail.com,googlemail.com,+googlemail.com",
+    "hdServiceURL": "https://mail-server.1timetech.com/api",
+    "hdGmailServiceURL": "https://mail-server-2.1timetech.com/api",
+    "mailDomainsPremiumStr": "HD_GMAIL[gmail.com],HD_GMAIL[outlook.com],HD_GMAIL[protonmail.com],HD_GMAIL[icloud.com],HD[tempmail.edu.pl],HD[rommiui.com]",
+    "mailServicesStr": "temp-mail,HD,HD_GMAIL,temp-mail-io",
+    "mailServiceDefaultStr": "HD",
+    "mailServiceGroupsStr": "domain,random,popular",
+    "hdServiceKey": "b9db03078622",
+    "hdGmailServiceKey": "b9db03078622",
+    "latestUpdateUrl": "https://t.me/s/temporaryemailpro",
+    "termUriV2": "https://instant-mail.1timetech.com/terms-of-service",
+    "policyUriV2": "https://instant-mail.1timetech.com/privacy-policy"
+  },
+  "serviceEndpoints": {
+    "HD": {
+      "baseURL": "https://mail-server.1timetech.com/api",
+      "headers": {
+        "accept": "application/json",
+        "x-app-key": "b9db03078622"
+      },
+      "createMailbox": "POST /email   body: {\"data\": ENC({\"email\": \"user@domain\"})}",
+      "getMessages": "GET /email/{token}/messages?params=ENC({\"email\": \"user@domain\"})",
+      "getMessage": "GET /email/{token}/messages/{messageId}?params=ENC({\"email\": \"user@domain\"})",
+      "getDomains": "remoteConfig hdDomainsStr (no HTTP)",
+      "responseEncoding": "{\"data\": ENC(ENC(JSON)), \"type\": \"object\"} — doubly wrapped"
+    },
+    "HD_GMAIL": {
+      "baseURL": "https://mail-server-2.1timetech.com/api",
+      "headers": {
+        "accept": "application/json",
+        "x-app-key": "b9db03078622"
+      },
+      "createMailbox": "POST /g-mail   body: {\"data\": ENC({\"email\": \"name@gmail.com\"})}",
+      "getMessages": "GET /email/{token}/messages?params=ENC({\"email\": \"...\"})",
+      "getMessage": "GET /email/{token}/messages/{messageId}?params=ENC({\"email\": \"...\"})",
+      "responseEncoding": "same as HD (doubly wrapped)"
+    },
+    "temp-mail": {
+      "baseURL": "https://mob2.temp-mail.org",
+      "headers": {
+        "accept": "application/json",
+        "accept-encoding": "gzip",
+        "content-length": "0",
+        "user-agent": "TempMail/1022 CFNetwork/1568.100.1 Darwin/24.0.0"
+      },
+      "createMailbox": "POST /mailbox  →  {\"token\": \"<JWT>\", \"mailbox\": \"addr@dom\"}",
+      "getMessages": "GET /messages   header: authorization: <JWT>",
+      "getMessage": "GET /messages/{id}   header: authorization: <JWT>",
+      "getDomains": "hardcoded [\"random.com\"]"
+    },
+    "temp-mail-io": {
+      "baseURL": "https://api.internal.temp-mail.io/api",
+      "headers": {
+        "authority": "api.internal.temp-mail.io",
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "en-US,en;q=0.9,vi;q=0.8",
+        "application-name": "web",
+        "application-version": "2.2.29",
+        "origin": "https://temp-mail.io",
+        "referer": "https://temp-mail.io/",
+        "user-agent": "Mozilla/5.0 (Linux; Android 10) ... Chrome/118.0.5993.80 Mobile Safari/537.36"
+      },
+      "getDomains": "GET /v4/domains  →  {\"domains\": [{\"name\", \"type\", ...}]}",
+      "createMailbox": "POST /v3/email/new  body: {\"name\": \"...\", \"domain\": \"...\"} (optional)  →  {\"email\", \"token\"}",
+      "getMessages": "GET /v3/email/{email}/messages  →  [{...}]",
+      "getMessage": "GET /v3/message/{id}"
+    }
+  },
+  "hdEncodingAlgorithm": {
+    "description": "ENC(x) = charSwap( reverse( base64( JSON(x) ) ) )",
+    "steps": [
+      "JSON.stringify(payload, no spaces)",
+      "standard base64 encode",
+      "reverse the resulting string",
+      "for each pair in [ao, sq, =x, 5b, 4*, Bz]: swap a<->b"
+    ],
+    "decode": "identical swap is self-inverse: swap pairs, reverse, fix padding, base64 decode",
+    "responseNote": "server responses are doubly encoded: unwrap {\"data\": ...} twice"
+  },
+  "sourceLocation": {
+    "bundle": "assets/index.android.bundle (Hermes bytecode v96)",
+    "configObject": "Function #16540 (module config), NewObjectWithBufferLong",
+    "HD_module": "Functions #16015-#16058",
+    "HD_GMAIL_module": "Functions #18001-#18013",
+    "temp-mail_module": "Functions #15623-#15645",
+    "temp-mail-io_module": "Functions #18022-#18050"
+  }
+}
