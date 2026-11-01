@@ -256,6 +256,8 @@ const els = {
   gwCopyRedirectBtn: document.getElementById('gwCopyRedirectBtn'),
   gwOpenConsoleBtn: document.getElementById('gwOpenConsoleBtn'),
   gwOpenApiBtn: document.getElementById('gwOpenApiBtn'),
+  gwOpenTestersBtn: document.getElementById('gwOpenTestersBtn'),
+  gwOpenClientBtn: document.getElementById('gwOpenClientBtn'),
   gwClientIdInput: document.getElementById('gwClientIdInput'),
   gwConnectBtn: document.getElementById('gwConnectBtn'),
   gwError: document.getElementById('gwError'),
@@ -853,10 +855,16 @@ els.closeGmailWizardBtn.addEventListener('click', () => {
 
 gwOpenTab(els.gwOpenConsoleBtn, 'https://console.cloud.google.com/projectcreate');
 gwOpenTab(els.gwOpenApiBtn, 'https://console.cloud.google.com/apis/library/gmail.googleapis.com');
+gwOpenTab(els.gwOpenTestersBtn, 'https://console.cloud.google.com/auth/audience');
+gwOpenTab(els.gwOpenClientBtn, 'https://console.cloud.google.com/apis/credentials/oauthclient', true);
 
-function gwOpenTab(btn, url) {
+function gwOpenTab(btn, url, copyBefore = false) {
   btn.addEventListener('click', async () => {
     try {
+      if (copyBefore) {
+        const ok = await copyText(els.gwExtId.textContent.trim());
+        if (ok) showToast('Extension ID کپی شد — در فرم گوگل Paste کن (Ctrl+V)');
+      }
       await chrome.tabs.create({ url, active: true });
     } catch {}
   });
