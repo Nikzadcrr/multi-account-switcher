@@ -1,0 +1,1245 @@
+     1→     1→// ============================================================================
+     2→     2→// AI Multi-Account Switcher + Temp Mail Client - Popup Controller (v3.0)
+     3→     3→// ============================================================================
+     4→     4→
+     5→     5→const COLORS = [
+     6→     6→  '#6366f1', '#06b6d4', '#10b981', '#f59e0b',
+     7→     7→  '#ec4899', '#8b5cf6', '#14b8a6', '#f97316',
+     8→     8→  '#3b82f6', '#ef4444'
+     9→     9→];
+    10→    10→
+    11→    11→const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    12→    12→function toFa(val) {
+    13→    13→  return String(val).replace(/\d/g, (d) => persianDigits[Number(d)]);
+    14→    14→}
+    15→    15→
+    16→    16→function formatRelativeTime(ts) {
+    17→    17→  if (!ts) return 'استفاده‌نشده';
+    18→    18→  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    19→    19→  if (diffSec < 45) return 'هم‌اکنون';
+    20→    20→  const mins = Math.floor(diffSec / 60);
+    21→    21→  if (mins < 60) return `${toFa(mins)} دقیقه پیش`;
+    22→    22→  const hours = Math.floor(mins / 60);
+    23→    23→  if (hours < 24) return `${toFa(hours)} ساعت پیش`;
+    24→    24→  const days = Math.floor(hours / 24);
+    25→    25→  return `${toFa(days)} روز پیش`;
+    26→    26→}
+    27→    27→
+    28→    28→function sendMsg(payload) {
+    29→    29→  return new Promise((resolve) => {
+    30→    30→    chrome.runtime.sendMessage(payload, (res) => {
+    31→    31→      if (chrome.runtime.lastError) {
+    32→    32→        resolve({ ok: false, error: chrome.runtime.lastError.message });
+    33→    33→        return;
+    34→    34→      }
+    35→    35→      resolve(res || { ok: false, error: 'پاسخی دریافت نشد.' });
+    36→    36→    });
+    37→    37→  });
+    38→    38→}
+    39→    39→
+    40→    40→let state = {
+    41→    41→  tabId: null,
+    42→    42→  url: '',
+    43→    43→  supported: false,
+    44→    44→  siteKey: '',
+    45→    45→  hostname: '',
+    46→    46→  isGoogleUnified: false,
+    47→    47→  activeAccountId: null,
+    48→    48→  isIsolatedTab: false,
+    49→    49→  isolatedAccountId: null,
+    50→    50→  openIsolatedTabs: [],
+    51→    51→  accounts: [],
+    52→    52→  settings: {
+    53→    53→    floatingWidget: true,
+    54→    54→    autoSync: true,
+    55→    55→    includeStorage: true
+    56→    56→  }
+    57→    57→};
+    58→    58→
+    59→    59→let mailState = {
+    60→    60→  activeMailboxId: null,
+    61→    61→  mailboxes: [],
+    62→    62→  messages: [],
+    63→    63→  readingMessageId: null
+    64→    64→};
+    65→    65→
+    66→    66→// رابط ساخت ایمیل — دقیقا مثل اپ Instant Mail: سرویس + گروه (تصادفی/دامنه/محبوب)
+    67→    67→const MAIL_PROVIDER_META = [
+    68→    68→  { key: 'hd', icon: '⚡', label: 'اینسنت میل' },
+    69→    69→  { key: 'hd_gmail', icon: '📧', label: 'جیمیل آنی' },
+    70→    70→  { key: 'temp-mail-io', icon: '🌐', label: 'Temp-Mail.io' },
+    71→    71→  { key: 'mail.tm', icon: '🅰', label: 'Mail.tm' },
+    72→    72→  { key: 'mail.gw', icon: '🅱', label: 'Mail.gw' }
+    73→    73→];
+    74→    74→
+    75→    75→let mailUi = { provider: 'hd', group: 'domain', domain: '' };
+    76→    76→let createCardOpen = false;
+    77→    77→let providerDomainsCache = {}; // provider -> { domains, popular }
+    78→    78→
+    79→    79→let currentView = 'accounts'; // 'accounts' | 'mail'
+    80→    80→let searchQuery = '';
+    81→    81→let pendingDeleteId = null;
+    82→    82→let editingAccountId = null;
+    83→    83→let editingColor = COLORS[0];
+    84→    84→let toastTimer = null;
+    85→    85→let inboxPollTimer = null;
+    86→    86→
+    87→    87→const els = {
+    88→    88→  domainBadge: document.getElementById('domainBadge'),
+    89→    89→  countBadge: document.getElementById('countBadge'),
+    90→    90→  isoCountBadge: document.getElementById('isoCountBadge'),
+    91→    91→  toggleSettingsBtn: document.getElementById('toggleSettingsBtn'),
+    92→    92→  closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+    93→    93→  tabAccountsBtn: document.getElementById('tabAccountsBtn'),
+    94→    94→  tabMailBtn: document.getElementById('tabMailBtn'),
+    95→    95→  mailUnreadBadge: document.getElementById('mailUnreadBadge'),
+    96→    96→  accountsView: document.getElementById('accountsView'),
+    97→    97→  mailView: document.getElementById('mailView'),
+    98→    98→  toast: document.getElementById('toast'),
+    99→    99→  unsupportedState: document.getElementById('unsupportedState'),
+   100→   100→  mainContent: document.getElementById('mainContent'),
+   101→   101→  googleWarning: document.getElementById('googleWarning'),
+   102→   102→  settingsPanel: document.getElementById('settingsPanel'),
+   103→   103→  chkFloatingWidget: document.getElementById('chkFloatingWidget'),
+   104→   104→  chkAutoSync: document.getElementById('chkAutoSync'),
+   105→   105→  chkIncludeStorage: document.getElementById('chkIncludeStorage'),
+   106→   106→  exportSiteBtn: document.getElementById('exportSiteBtn'),
+   107→   107→  exportAllBtn: document.getElementById('exportAllBtn'),
+   108→   108→  importBtn: document.getElementById('importBtn'),
+   109→   109→  importFileInput: document.getElementById('importFileInput'),
+   110→   110→  activeStatusText: document.getElementById('activeStatusText'),
+   111→   111→  nextAccountBtn: document.getElementById('nextAccountBtn'),
+   112→   112→  prevAccountBtn: document.getElementById('prevAccountBtn'),
+   113→   113→  openBatchBtn: document.getElementById('openBatchBtn'),
+   114→   114→  batchCountSelect: document.getElementById('batchCountSelect'),
+   115→   115→  accountNameInput: document.getElementById('accountNameInput'),
+   116→   116→  accountNoteInput: document.getElementById('accountNoteInput'),
+   117→   117→  linkActiveMailRow: document.getElementById('linkActiveMailRow'),
+   118→   118→  chkLinkActiveMail: document.getElementById('chkLinkActiveMail'),
+   119→   119→  linkActiveMailLabel: document.getElementById('linkActiveMailLabel'),
+   120→   120→  saveCurrentBtn: document.getElementById('saveCurrentBtn'),
+   121→   121→  newSessionBtn: document.getElementById('newSessionBtn'),
+   122→   122→  searchInput: document.getElementById('searchInput'),
+   123→   123→  emptyAccountsState: document.getElementById('emptyAccountsState'),
+   124→   124→  accountsList: document.getElementById('accountsList'),
+   125→   125→  editModal: document.getElementById('editModal'),
+   126→   126→  editNameInput: document.getElementById('editNameInput'),
+   127→   127→  editNoteInput: document.getElementById('editNoteInput'),
+   128→   128→  editColorPicker: document.getElementById('editColorPicker'),
+   129→   129→  saveEditBtn: document.getElementById('saveEditBtn'),
+   130→   130→  cancelEditBtn: document.getElementById('cancelEditBtn'),
+   131→   131→
+   132→   132→  // Mail View Elements (Instant Mail app-style UI)
+   133→   133→  mailServiceChips: document.getElementById('mailServiceChips'),
+   134→   134→  imDomainGrid: document.getElementById('imDomainGrid'),
+   135→   135→  mailCreateCard: document.getElementById('mailCreateCard'),
+   136→   136→  closeCreateCardBtn: document.getElementById('closeCreateCardBtn'),
+   137→   137→  newMailBtn: document.getElementById('newMailBtn'),
+   138→   138→  groupTabs: document.querySelectorAll('.im-group-tab'),
+   139→   139→  mailCustomUser: document.getElementById('mailCustomUser'),
+   140→   140→  createMailBtn: document.getElementById('createMailBtn'),
+   141→   141→  activeMailboxCard: document.getElementById('activeMailboxCard'),
+   142→   142→  mailboxHistorySelect: document.getElementById('mailboxHistorySelect'),
+   143→   143→  deleteMailboxBtn: document.getElementById('deleteMailboxBtn'),
+   144→   144→  currentEmailText: document.getElementById('currentEmailText'),
+   145→   145→  copyEmailBtn: document.getElementById('copyEmailBtn'),
+   146→   146→  fillEmailBtn: document.getElementById('fillEmailBtn'),
+   147→   147→  inboxSection: document.getElementById('inboxSection'),
+   148→   148→  inboxPollStatus: document.getElementById('inboxPollStatus'),
+   149→   149→  refreshInboxBtn: document.getElementById('refreshInboxBtn'),
+   150→   150→  emptyInboxState: document.getElementById('emptyInboxState'),
+   151→   151→  messagesList: document.getElementById('messagesList'),
+   152→   152→
+   153→   153→  // Mail Read Modal
+   154→   154→  mailReadModal: document.getElementById('mailReadModal'),
+   155→   155→  mailModalSubject: document.getElementById('mailModalSubject'),
+   156→   156→  mailModalFrom: document.getElementById('mailModalFrom'),
+   157→   157→  mailModalOtpBox: document.getElementById('mailModalOtpBox'),
+   158→   158→  mailModalOtpCode: document.getElementById('mailModalOtpCode'),
+   159→   159→  copyModalOtpBtn: document.getElementById('copyModalOtpBtn'),
+   160→   160→  mailModalLinks: document.getElementById('mailModalLinks'),
+   161→   161→  mailModalBody: document.getElementById('mailModalBody'),
+   162→   162→  deleteMessageBtn: document.getElementById('deleteMessageBtn'),
+   163→   163→  closeMailModalBtn: document.getElementById('closeMailModalBtn'),
+   164→   164→  closeMailModalBtn2: document.getElementById('closeMailModalBtn2')
+   165→   165→};
+   166→   166→
+   167→   167→function showToast(text, isError = false) {
+   168→   168→  clearTimeout(toastTimer);
+   169→   169→  els.toast.textContent = text;
+   170→   170→  els.toast.classList.toggle('error', isError);
+   171→   171→  els.toast.classList.remove('hidden');
+   172→   172→  toastTimer = setTimeout(() => {
+   173→   173→    els.toast.classList.add('hidden');
+   174→   174→  }, 3200);
+   175→   175→}
+   176→   176→
+   177→   177→// ----------------------------------------------------------------------------
+   178→   178→// View Navigation
+   179→   179→// ----------------------------------------------------------------------------
+   180→   180→
+   181→   181→function switchView(viewName) {
+   182→   182→  currentView = viewName;
+   183→   183→  const isAcc = viewName === 'accounts';
+   184→   184→  els.tabAccountsBtn.classList.toggle('active', isAcc);
+   185→   185→  els.tabMailBtn.classList.toggle('active', !isAcc);
+   186→   186→  els.accountsView.classList.toggle('hidden', !isAcc);
+   187→   187→  els.mailView.classList.toggle('hidden', isAcc);
+   188→   188→
+   189→   189→  clearInterval(inboxPollTimer);
+   190→   190→  if (!isAcc) {
+   191→   191→    renderMailSections();
+   192→   192→    refreshInboxMessages();
+   193→   193→    inboxPollTimer = setInterval(() => {
+   194→   194→      if (mailState.activeMailboxId) {
+   195→   195→        refreshInboxMessages(true);
+   196→   196→      }
+   197→   197→    }, 5000);
+   198→   198→  }
+   199→   199→}
+   200→   200→
+   201→   201→els.tabAccountsBtn.addEventListener('click', () => switchView('accounts'));
+   202→   202→els.tabMailBtn.addEventListener('click', () => switchView('mail'));
+   203→   203→
+   204→   204→// ----------------------------------------------------------------------------
+   205→   205→// Site & Accounts State
+   206→   206→// ----------------------------------------------------------------------------
+   207→   207→
+   208→   208→async function loadState() {
+   209→   209→  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+   210→   210→
+   211→   211→  const [res, mRes] = await Promise.all([
+   212→   212→    sendMsg({ type: 'GET_SITE_STATE', tabId: tab?.id, url: tab?.url }),
+   213→   213→    sendMsg({ type: 'MAIL_GET_STATE' })
+   214→   214→  ]);
+   215→   215→
+   216→   216→  if (mRes?.ok) {
+   217→   217→    mailState.activeMailboxId = mRes.activeMailboxId;
+   218→   218→    mailState.mailboxes = mRes.mailboxes || [];
+   219→   219→    await loadMailUiPref();
+   220→   220→    renderMailSections();
+   221→   221→  }
+   222→   222→
+   223→   223→  if (!res.ok || !res.supported) {
+   224→   224→    state.supported = false;
+   225→   225→    state.tabId = tab?.id || null;
+   226→   226→    els.domainBadge.textContent = 'صفحه داخلی مرورگر';
+   227→   227→    els.countBadge.textContent = '۰ اکانت';
+   228→   228→    els.isoCountBadge.classList.add('hidden');
+   229→   229→    els.unsupportedState.classList.remove('hidden');
+   230→   230→    els.mainContent.classList.add('hidden');
+   231→   231→    return;
+   232→   232→  }
+   233→   233→
+   234→   234→  state = {
+   235→   235→    ...state,
+   236→   236→    tabId: tab?.id || res.tabId,
+   237→   237→    url: tab?.url || res.url,
+   238→   238→    supported: true,
+   239→   239→    siteKey: res.siteKey,
+   240→   240→    hostname: res.hostname,
+   241→   241→    isGoogleUnified: Boolean(res.isGoogleUnified),
+   242→   242→    activeAccountId: res.activeAccountId,
+   243→   243→    isIsolatedTab: Boolean(res.isIsolatedTab),
+   244→   244→    isolatedAccountId: res.isolatedAccountId || null,
+   245→   245→    openIsolatedTabs: res.openIsolatedTabs || [],
+   246→   246→    accounts: res.accounts || [],
+   247→   247→    settings: res.settings || state.settings
+   248→   248→  };
+   249→   249→
+   250→   250→  els.unsupportedState.classList.add('hidden');
+   251→   251→  els.mainContent.classList.remove('hidden');
+   252→   252→
+   253→   253→  const currentVal = els.accountNameInput.value.trim();
+   254→   254→  if (!currentVal || /^اکانت\s+[۰-۹0-9]+$/.test(currentVal)) {
+   255→   255→    els.accountNameInput.value = `اکانت ${toFa(state.accounts.length + 1)}`;
+   256→   256→  }
+   257→   257→
+   258→   258→  renderUI();
+   259→   259→}
+   260→   260→
+   261→   261→function renderUI() {
+   262→   262→  els.domainBadge.textContent = state.siteKey;
+   263→   263→  els.countBadge.textContent = `${toFa(state.accounts.length)} اکانت`;
+   264→   264→
+   265→   265→  const openIsoCount = state.openIsolatedTabs.length;
+   266→   266→  els.isoCountBadge.classList.toggle('hidden', openIsoCount === 0);
+   267→   267→  els.isoCountBadge.textContent = `🔒 ${toFa(openIsoCount)} تب باز`;
+   268→   268→
+   269→   269→  els.googleWarning.classList.toggle('hidden', !state.isGoogleUnified);
+   270→   270→
+   271→   271→  els.chkFloatingWidget.checked = state.settings.floatingWidget !== false;
+   272→   272→  els.chkAutoSync.checked = state.settings.autoSync !== false;
+   273→   273→  els.chkIncludeStorage.checked = state.settings.includeStorage !== false;
+   274→   274→
+   275→   275→  // Link active mail indicator
+   276→   276→  const activeMb = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
+   277→   277→  if (activeMb) {
+   278→   278→    els.linkActiveMailRow.classList.remove('hidden');
+   279→   279→    els.linkActiveMailLabel.textContent = `اتصال ایمیل فعال (${activeMb.address}) به این اکانت`;
+   280→   280→  } else {
+   281→   281→    els.linkActiveMailRow.classList.add('hidden');
+   282→   282→  }
+   283→   283→
+   284→   284→  const total = state.accounts.length;
+   285→   285→
+   286→   286→  if (state.isIsolatedTab && state.isolatedAccountId) {
+   287→   287→    const isoIdx = state.accounts.findIndex((a) => a.id === state.isolatedAccountId);
+   288→   288→    const isoAcc = isoIdx >= 0 ? state.accounts[isoIdx] : null;
+   289→   289→    els.activeStatusText.textContent = isoAcc
+   290→   290→      ? `🔒 تب همزمان ایزوله: ${isoAcc.name} (${toFa(isoIdx + 1)})`
+   291→   291→      : '🔒 تب ایزوله';
+   292→   292→    els.activeStatusText.style.color = '#67e8f9';
+   293→   293→  } else {
+   294→   294→    const activeIdx = state.accounts.findIndex((a) => a.id === state.activeAccountId);
+   295→   295→    const activeAcc = activeIdx >= 0 ? state.accounts[activeIdx] : null;
+   296→   296→
+   297→   297→    if (activeAcc) {
+   298→   298→      els.activeStatusText.textContent = `${activeAcc.name} (${toFa(activeIdx + 1)} از ${toFa(total)})`;
+   299→   299→      els.activeStatusText.style.color = '#34d399';
+   300→   300→    } else if (total > 0) {
+   301→   301→      els.activeStatusText.textContent = 'نشست جدید (ذخیره‌نشده)';
+   302→   302→      els.activeStatusText.style.color = '#fbbf24';
+   303→   303→    } else {
+   304→   304→      els.activeStatusText.textContent = 'بدون اکانت ذخیره‌شده';
+   305→   305→      els.activeStatusText.style.color = '#94a3b8';
+   306→   306→    }
+   307→   307→  }
+   308→   308→
+   309→   309→  const hasActive = state.accounts.some((a) => a.id === state.activeAccountId);
+   310→   310→  const canCycle = total > 1 || (total === 1 && !hasActive);
+   311→   311→  els.nextAccountBtn.disabled = !canCycle;
+   312→   312→  els.prevAccountBtn.disabled = !canCycle;
+   313→   313→  els.openBatchBtn.disabled = total === 0;
+   314→   314→
+   315→   315→  els.searchInput.parentElement.classList.toggle('hidden', total < 4);
+   316→   316→  els.emptyAccountsState.classList.toggle('hidden', total > 0);
+   317→   317→
+   318→   318→  renderAccountsList();
+   319→   319→}
+   320→   320→
+   321→   321→function renderAccountsList() {
+   322→   322→  els.accountsList.innerHTML = '';
+   323→   323→  const q = searchQuery.trim().toLowerCase();
+   324→   324→
+   325→   325→  const openTabByAccId = new Map();
+   326→   326→  for (const item of state.openIsolatedTabs) {
+   327→   327→    openTabByAccId.set(item.accountId, item.tabId);
+   328→   328→  }
+   329→   329→
+   330→   330→  state.accounts.forEach((acc, idx) => {
+   331→   331→    if (q) {
+   332→   332→      const hay = `${acc.name} ${acc.note || ''} ${acc.email || ''} ${idx + 1} ${toFa(idx + 1)}`.toLowerCase();
+   333→   333→      if (!hay.includes(q)) return;
+   334→   334→    }
+   335→   335→
+   336→   336→    const effectiveCurrentId = state.isIsolatedTab
+   337→   337→      ? state.isolatedAccountId
+   338→   338→      : state.activeAccountId;
+   339→   339→    const isActiveHere = acc.id === effectiveCurrentId;
+   340→   340→    const openIsoTabId = openTabByAccId.get(acc.id);
+   341→   341→
+   342→   342→    const card = document.createElement('div');
+   343→   343→    card.className =
+   344→   344→      'acc-card' +
+   345→   345→      (isActiveHere ? ' active' : '') +
+   346→   346→      (acc.skipped ? ' skipped' : '');
+   347→   347→
+   348→   348→    const main = document.createElement('div');
+   349→   349→    main.className = 'acc-main';
+   350→   350→    main.title = `کلیک برای سوییچ در همین تب به «${acc.name}»`;
+   351→   351→
+   352→   352→    const indexBadge = document.createElement('div');
+   353→   353→    indexBadge.className = 'acc-index';
+   354→   354→    indexBadge.style.background = acc.color || '#6366f1';
+   355→   355→    indexBadge.textContent = toFa(idx + 1);
+   356→   356→
+   357→   357→    const info = document.createElement('div');
+   358→   358→    info.className = 'acc-info';
+   359→   359→
+   360→   360→    const titleRow = document.createElement('div');
+   361→   361→    titleRow.className = 'acc-title-row';
+   362→   362→
+   363→   363→    const nameEl = document.createElement('span');
+   364→   364→    nameEl.className = 'acc-name';
+   365→   365→    nameEl.textContent = acc.name;
+   366→   366→    titleRow.appendChild(nameEl);
+   367→   367→
+   368→   368→    if (isActiveHere) {
+   369→   369→      const activePill = document.createElement('span');
+   370→   370→      activePill.className = 'pill-badge pill-active';
+   371→   371→      activePill.textContent = state.isIsolatedTab ? 'این تب' : 'فعال';
+   372→   372→      titleRow.appendChild(activePill);
+   373→   373→    }
+   374→   374→
+   375→   375→    if (openIsoTabId) {
+   376→   376→      const isoPill = document.createElement('span');
+   377→   377→      isoPill.className = 'pill-badge pill-iso';
+   378→   378→      isoPill.title = 'کلیک برای رفتن به تب بازِ این اکانت';
+   379→   379→      isoPill.textContent = '🟢 تب باز';
+   380→   380→      isoPill.addEventListener('click', async (e) => {
+   381→   381→        e.stopPropagation();
+   382→   382→        await chrome.tabs.update(openIsoTabId, { active: true }).catch(() => {});
+   383→   383→        window.close();
+   384→   384→      });
+   385→   385→      titleRow.appendChild(isoPill);
+   386→   386→    }
+   387→   387→
+   388→   388→    if (acc.skipped) {
+   389→   389→      const skipPill = document.createElement('span');
+   390→   390→      skipPill.className = 'pill-badge pill-skip';
+   391→   391→      skipPill.textContent = 'توقف';
+   392→   392→      titleRow.appendChild(skipPill);
+   393→   393→    }
+   394→   394→
+   395→   395→    const meta = document.createElement('div');
+   396→   396→    meta.className = 'acc-meta';
+   397→   397→    const parts = [];
+   398→   398→    if (acc.note) parts.push(acc.note);
+   399→   399→    parts.push(`${formatRelativeTime(acc.lastUsedAt)}`);
+   400→   400→    meta.textContent = parts.join(' • ');
+   401→   401→
+   402→   402→    info.appendChild(titleRow);
+   403→   403→    info.appendChild(meta);
+   404→   404→
+   405→   405→    main.appendChild(indexBadge);
+   406→   406→    main.appendChild(info);
+   407→   407→
+   408→   408→    main.addEventListener('click', async () => {
+   409→   409→      await handleSwitchTo(acc.id);
+   410→   410→    });
+   411→   411→
+   412→   412→    const actions = document.createElement('div');
+   413→   413→    actions.className = 'acc-actions';
+   414→   414→
+   415→   415→    // Jump to linked Temp-Mail Inbox if linked!
+   416→   416→    if (acc.mailboxId && mailState.mailboxes.some((m) => m.id === acc.mailboxId)) {
+   417→   417→      const mailBtn = document.createElement('button');
+   418→   418→      mailBtn.className = 'mini-action';
+   419→   419→      mailBtn.title = `باز کردن صندوق پیام ایمیل این اکانت (${acc.email || ''})`;
+   420→   420→      mailBtn.textContent = '📧';
+   421→   421→      mailBtn.addEventListener('click', async (e) => {
+   422→   422→        e.stopPropagation();
+   423→   423→        await sendMsg({ type: 'MAIL_SELECT_INBOX', mailboxId: acc.mailboxId });
+   424→   424→        mailState.activeMailboxId = acc.mailboxId;
+   425→   425→        renderMailUI();
+   426→   426→        switchView('mail');
+   427→   427→      });
+   428→   428→      actions.appendChild(mailBtn);
+   429→   429→    }
+   430→   430→
+   431→   431→    // Open in Simultaneous Isolated Tab
+   432→   432→    const isoBtn = document.createElement('button');
+   433→   433→    isoBtn.className = 'mini-action iso-btn';
+   434→   434→    isoBtn.title = openIsoTabId
+   435→   435→      ? `رفتن به تب باز «${acc.name}»`
+   436→   436→      : `باز کردن همزمان «${acc.name}» در یک تب جدید و ایزوله`;
+   437→   437→    isoBtn.textContent = '🗗';
+   438→   438→    isoBtn.addEventListener('click', async (e) => {
+   439→   439→      e.stopPropagation();
+   440→   440→      const res = await sendMsg({
+   441→   441→        type: 'OPEN_ISOLATED_TAB',
+   442→   442→        tabId: state.tabId,
+   443→   443→        url: state.url,
+   444→   444→        accountId: acc.id,
+   445→   445→        focusIfOpen: true
+   446→   446→      });
+   447→   447→      if (res.ok) {
+   448→   448→        window.close();
+   449→   449→      } else {
+   450→   450→        showToast(res.error || 'خطا در باز کردن تب همزمان', true);
+   451→   451→      }
+   452→   452→    });
+   453→   453→
+   454→   454→    // Update cookies
+   455→   455→    const updateBtn = document.createElement('button');
+   456→   456→    updateBtn.className = 'mini-action';
+   457→   457→    updateBtn.title = 'بروزرسانی کوکی‌های این اکانت با نشست فعلی تب';
+   458→   458→    updateBtn.textContent = '🔄';
+   459→   459→    updateBtn.addEventListener('click', async (e) => {
+   460→   460→      e.stopPropagation();
+   461→   461→      const res = await sendMsg({
+   462→   462→        type: 'UPDATE_ACCOUNT_SESSION',
+   463→   463→        tabId: state.tabId,
+   464→   464→        accountId: acc.id
+   465→   465→      });
+   466→   466→      if (res.ok) {
+   467→   467→        showToast(`نشست «${acc.name}» بروزرسانی شد.`);
+   468→   468→        await loadState();
+   469→   469→      } else {
+   470→   470→        showToast(res.error || 'خطا در بروزرسانی', true);
+   471→   471→      }
+   472→   472→    });
+   473→   473→
+   474→   474→    // Skip in rotation
+   475→   475→    const skipBtn = document.createElement('button');
+   476→   476→    skipBtn.className = 'mini-action';
+   477→   477→    skipBtn.title = acc.skipped ? 'برگرداندن به چرخش' : 'رد شدن موقت در چرخش';
+   478→   478→    skipBtn.textContent = acc.skipped ? '▶️' : '⏸';
+   479→   479→    skipBtn.addEventListener('click', async (e) => {
+   480→   480→      e.stopPropagation();
+   481→   481→      await sendMsg({
+   482→   482→        type: 'EDIT_ACCOUNT_META',
+   483→   483→        siteKey: state.siteKey,
+   484→   484→        accountId: acc.id,
+   485→   485→        patch: { skipped: !acc.skipped }
+   486→   486→      });
+   487→   487→      await loadState();
+   488→   488→    });
+   489→   489→
+   490→   490→    // Edit
+   491→   491→    const editBtn = document.createElement('button');
+   492→   492→    editBtn.className = 'mini-action';
+   493→   493→    editBtn.title = 'ویرایش نام، یادداشت و رنگ';
+   494→   494→    editBtn.textContent = '✏️';
+   495→   495→    editBtn.addEventListener('click', (e) => {
+   496→   496→      e.stopPropagation();
+   497→   497→      openEditModal(acc);
+   498→   498→    });
+   499→   499→
+   500→   500→    // Delete
+   501→   501→    const delBtn = document.createElement('button');
+   502→   502→    const isConfirming = pendingDeleteId === acc.id;
+   503→   503→    delBtn.className = 'mini-action' + (isConfirming ? ' confirm-del' : '');
+   504→   504→    delBtn.title = 'حذف اکانت';
+   505→   505→    delBtn.textContent = isConfirming ? 'حذف؟' : '🗑️';
+   506→   506→    delBtn.addEventListener('click', async (e) => {
+   507→   507→      e.stopPropagation();
+   508→   508→      if (pendingDeleteId !== acc.id) {
+   509→   509→        pendingDeleteId = acc.id;
+   510→   510→        renderAccountsList();
+   511→   511→        setTimeout(() => {
+   512→   512→          if (pendingDeleteId === acc.id) {
+   513→   513→            pendingDeleteId = null;
+   514→   514→            renderAccountsList();
+   515→   515→          }
+   516→   516→        }, 3000);
+   517→   517→        return;
+   518→   518→      }
+   519→   519→      pendingDeleteId = null;
+   520→   520→      const res = await sendMsg({
+   521→   521→        type: 'DELETE_ACCOUNT',
+   522→   522→        siteKey: state.siteKey,
+   523→   523→        accountId: acc.id
+   524→   524→      });
+   525→   525→      if (res.ok) {
+   526→   526→        showToast(`«${acc.name}» حذف شد.`);
+   527→   527→        await loadState();
+   528→   528→      }
+   529→   529→    });
+   530→   530→
+   531→   531→    actions.appendChild(isoBtn);
+   532→   532→    actions.appendChild(updateBtn);
+   533→   533→    actions.appendChild(skipBtn);
+   534→   534→    actions.appendChild(editBtn);
+   535→   535→    actions.appendChild(delBtn);
+   536→   536→
+   537→   537→    card.appendChild(main);
+   538→   538→    card.appendChild(actions);
+   539→   539→    els.accountsList.appendChild(card);
+   540→   540→  });
+   541→   541→}
+   542→   542→
+   543→   543→// ----------------------------------------------------------------------------
+   544→   544→// Temp Mail & Live Inbox Controller
+   545→   545→// ----------------------------------------------------------------------------
+   546→   546→
+   547→   547→// ---------------- Instant Mail app-style create UI ----------------
+   548→   548→
+   549→   549→async function ensureProviderDomains(provider) {
+   550→   550→  if (!providerDomainsCache[provider]) {
+   551→   551→    const res = await sendMsg({ type: 'MAIL_FETCH_DOMAINS', provider });
+   552→   552→    providerDomainsCache[provider] = {
+   553→   553→      domains: res.ok && Array.isArray(res.domains) ? res.domains : [],
+   554→   554→      popular: res.ok && Array.isArray(res.popular) ? res.popular : []
+   555→   555→    };
+   556→   556→  }
+   557→   557→  return providerDomainsCache[provider];
+   558→   558→}
+   559→   559→
+   560→   560→function renderServiceChips() {
+   561→   561→  els.mailServiceChips.innerHTML = '';
+   562→   562→  MAIL_PROVIDER_META.forEach((p) => {
+   563→   563→    const chip = document.createElement('button');
+   564→   564→    chip.type = 'button';
+   565→   565→    chip.className =
+   566→   566→      'im-chip' + (mailUi.provider === p.key ? ' selected' : '');
+   567→   567→    chip.innerHTML = `<span>${p.icon}</span> ${p.label}`;
+   568→   568→    chip.addEventListener('click', async () => {
+   569→   569→      if (mailUi.provider === p.key) return;
+   570→   570→      mailUi.provider = p.key;
+   571→   571→      mailUi.domain = '';
+   572→   572→      providerDomainsCache[p.key] = providerDomainsCache[p.key] || null;
+   573→   573→      saveMailUiPref();
+   574→   574→      renderServiceChips();
+   575→   575→      await renderDomainGrid();
+   576→   576→    });
+   577→   577→    els.mailServiceChips.appendChild(chip);
+   578→   578→  });
+   579→   579→}
+   580→   580→
+   581→   581→function renderGroupTabs() {
+   582→   582→  els.groupTabs.forEach((btn) => {
+   583→   583→    btn.classList.toggle('active', btn.dataset.group === mailUi.group);
+   584→   584→  });
+   585→   585→}
+   586→   586→
+   587→   587→async function renderDomainGrid() {
+   588→   588→  els.imDomainGrid.innerHTML = '';
+   589→   589→
+   590→   590→  if (mailUi.group === 'random') {
+   591→   591→    els.imDomainGrid.classList.add('hidden');
+   592→   592→    els.mailCustomUser.classList.add('hidden');
+   593→   593→    els.createMailBtn.innerHTML = '🎲 ساخت ایمیل تصادفی';
+   594→   594→    return;
+   595→   595→  }
+   596→   596→
+   597→   597→  const { domains, popular } = await ensureProviderDomains(mailUi.provider);
+   598→   598→  const list = mailUi.group === 'popular'
+   599→   599→    ? (popular.length ? popular : domains.slice(0, 3))
+   600→   600→    : domains;
+   601→   601→
+   602→   602→  els.imDomainGrid.classList.remove('hidden');
+   603→   603→  els.mailCustomUser.classList.remove('hidden');
+   604→   604→  els.createMailBtn.innerHTML = '✨ ساخت ایمیل جدید';
+   605→   605→
+   606→   606→  if (!list.length) {
+   607→   607→    const err = document.createElement('div');
+   608→   608→    err.className = 'im-domain-error';
+   609→   609→    err.textContent = 'دریافت دامنه‌ها ناموفق بود؛ دوباره تلاش کنید.';
+   610→   610→    els.imDomainGrid.appendChild(err);
+   611→   611→    return;
+   612→   612→  }
+   613→   613→
+   614→   614→  if (!mailUi.domain || !list.includes(mailUi.domain)) {
+   615→   615→    mailUi.domain = list[0];
+   616→   616→    saveMailUiPref();
+   617→   617→  }
+   618→   618→
+   619→   619→  list.forEach((d) => {
+   620→   620→    const chip = document.createElement('button');
+   621→   621→    chip.type = 'button';
+   622→   622→    chip.className = 'im-domain-chip' + (d === mailUi.domain ? ' selected' : '');
+   623→   623→    chip.textContent = `@${d}`;
+   624→   624→    chip.title = `ساخت ایمیل روی دامنه ${d}`;
+   625→   625→    chip.addEventListener('click', () => {
+   626→   626→      mailUi.domain = d;
+   627→   627→      saveMailUiPref();
+   628→   628→      renderDomainGrid();
+   629→   629→    });
+   630→   630→    els.imDomainGrid.appendChild(chip);
+   631→   631→  });
+   632→   632→}
+   633→   633→
+   634→   634→function renderMailSections() {
+   635→   635→  const hasBoxes = mailState.mailboxes.length > 0;
+   636→   636→
+   637→   637→  els.activeMailboxCard.classList.toggle('hidden', !hasBoxes);
+   638→   638→  els.inboxSection.classList.toggle('hidden', !hasBoxes);
+   639→   639→  els.mailCreateCard.classList.toggle('hidden', hasBoxes && !createCardOpen);
+   640→   640→  els.closeCreateCardBtn.classList.toggle('hidden', !hasBoxes);
+   641→   641→
+   642→   642→  renderServiceChips();
+   643→   643→  renderGroupTabs();
+   644→   644→  renderDomainGrid();
+   645→   645→  renderMailUI();
+   646→   646→}
+   647→   647→
+   648→   648→async function loadMailUiPref() {
+   649→   649→  try {
+   650→   650→    const data = await chrome.storage.local.get('mailUiPref');
+   651→   651→    if (data.mailUiPref && MAIL_PROVIDER_META.some((p) => p.key === data.mailUiPref.provider)) {
+   652→   652→      mailUi = { ...mailUi, ...data.mailUiPref };
+   653→   653→    }
+   654→   654→  } catch {}
+   655→   655→}
+   656→   656→
+   657→   657→function saveMailUiPref() {
+   658→   658→  chrome.storage.local.set({ mailUiPref: mailUi }).catch(() => {});
+   659→   659→}
+   660→   660→
+   661→   661→els.groupTabs.forEach((btn) => {
+   662→   662→  btn.addEventListener('click', () => {
+   663→   663→    mailUi.group = btn.dataset.group;
+   664→   664→    saveMailUiPref();
+   665→   665→    renderGroupTabs();
+   666→   666→    renderDomainGrid();
+   667→   667→  });
+   668→   668→});
+   669→   669→
+   670→   670→els.newMailBtn.addEventListener('click', () => {
+   671→   671→  createCardOpen = true;
+   672→   672→  renderMailSections();
+   673→   673→  els.mailCreateCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+   674→   674→});
+   675→   675→
+   676→   676→els.closeCreateCardBtn.addEventListener('click', () => {
+   677→   677→  createCardOpen = false;
+   678→   678→  renderMailSections();
+   679→   679→});
+   680→   680→
+   681→   681→function renderMailUI() {
+   682→   682→  const hasBoxes = mailState.mailboxes.length > 0;
+   683→   683→  els.activeMailboxCard.classList.toggle('hidden', !hasBoxes);
+   684→   684→  els.inboxSection.classList.toggle('hidden', !hasBoxes);
+   685→   685→
+   686→   686→  if (!hasBoxes) return;
+   687→   687→
+   688→   688→  els.mailboxHistorySelect.innerHTML = '';
+   689→   689→  mailState.mailboxes.forEach((m, idx) => {
+   690→   690→    const opt = document.createElement('option');
+   691→   691→    opt.value = m.id;
+   692→   692→    opt.textContent = `${idx + 1}. ${m.address}`;
+   693→   693→    if (m.id === mailState.activeMailboxId) opt.selected = true;
+   694→   694→    els.mailboxHistorySelect.appendChild(opt);
+   695→   695→  });
+   696→   696→
+   697→   697→  const active =
+   698→   698→    mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId) ||
+   699→   699→    mailState.mailboxes[0];
+   700→   700→  if (active) {
+   701→   701→    mailState.activeMailboxId = active.id;
+   702→   702→    els.currentEmailText.textContent = active.address;
+   703→   703→  }
+   704→   704→}
+   705→   705→
+   706→   706→els.createMailBtn.addEventListener('click', async () => {
+   707→   707→  els.createMailBtn.disabled = true;
+   708→   708→  const originalLabel = els.createMailBtn.innerHTML;
+   709→   709→  els.createMailBtn.innerHTML = '⏳ در حال ساخت...';
+   710→   710→
+   711→   711→  const isRandom = mailUi.group === 'random';
+   712→   712→  const res = await sendMsg({
+   713→   713→    type: 'MAIL_CREATE_INBOX',
+   714→   714→    provider: mailUi.provider,
+   715→   715→    domain: isRandom ? '' : mailUi.domain,
+   716→   716→    customUser: isRandom ? '' : els.mailCustomUser.value.trim()
+   717→   717→  });
+   718→   718→
+   719→   719→  els.createMailBtn.disabled = false;
+   720→   720→  els.createMailBtn.innerHTML = originalLabel;
+   721→   721→
+   722→   722→  if (res.ok) {
+   723→   723→    els.mailCustomUser.value = '';
+   724→   724→    createCardOpen = false;
+   725→   725→    mailState.activeMailboxId = res.activeMailboxId;
+   726→   726→    mailState.mailboxes = res.mailboxes || [];
+   727→   727→    mailState.messages = [];
+   728→   728→    renderMailSections();
+   729→   729→    renderMessagesList();
+   730→   730→    renderUI();
+   731→   731→
+   732→   732→    try {
+   733→   733→      await navigator.clipboard.writeText(res.mailbox.address);
+   734→   734→      showToast(`ایمیل ساخته و کپی شد: ${res.mailbox.address}`);
+   735→   735→    } catch {
+   736→   736→      showToast(`ایمیل جدید ساخته شد ✅`);
+   737→   737→    }
+   738→   738→  } else {
+   739→   739→    showToast(res.error || 'خطا در ساخت ایمیل', true);
+   740→   740→  }
+   741→   741→});
+   742→   742→
+   743→   743→els.mailboxHistorySelect.addEventListener('change', async (e) => {
+   744→   744→  const id = e.target.value;
+   745→   745→  await sendMsg({ type: 'MAIL_SELECT_INBOX', mailboxId: id });
+   746→   746→  mailState.activeMailboxId = id;
+   747→   747→  mailState.messages = [];
+   748→   748→  renderMailUI();
+   749→   749→  renderMessagesList();
+   750→   750→  renderUI();
+   751→   751→  await refreshInboxMessages();
+   752→   752→});
+   753→   753→
+   754→   754→els.deleteMailboxBtn.addEventListener('click', async () => {
+   755→   755→  if (!mailState.activeMailboxId) return;
+   756→   756→  const res = await sendMsg({
+   757→   757→    type: 'MAIL_DELETE_INBOX',
+   758→   758→    mailboxId: mailState.activeMailboxId
+   759→   759→  });
+   760→   760→  if (res.ok) {
+   761→   761→    mailState.activeMailboxId = res.activeMailboxId;
+   762→   762→    mailState.mailboxes = res.mailboxes || [];
+   763→   763→    mailState.messages = [];
+   764→   764→    renderMailUI();
+   765→   765→    renderMessagesList();
+   766→   766→    renderUI();
+   767→   767→    showToast('ایمیل از لیست حذف شد.');
+   768→   768→    if (mailState.activeMailboxId) {
+   769→   769→      refreshInboxMessages();
+   770→   770→    }
+   771→   771→  }
+   772→   772→});
+   773→   773→
+   774→   774→els.copyEmailBtn.addEventListener('click', async () => {
+   775→   775→  const active = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
+   776→   776→  if (!active) return;
+   777→   777→  await navigator.clipboard.writeText(active.address).catch(() => {});
+   778→   778→  showToast('آدرس ایمیل کپی شد 📋');
+   779→   779→});
+   780→   780→
+   781→   781→els.fillEmailBtn.addEventListener('click', async () => {
+   782→   782→  const active = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId);
+   783→   783→  if (!active) return;
+   784→   784→  await navigator.clipboard.writeText(active.address).catch(() => {});
+   785→   785→  const res = await sendMsg({
+   786→   786→    type: 'MAIL_FILL_IN_PAGE',
+   787→   787→    tabId: state.tabId,
+   788→   788→    value: active.address,
+   789→   789→    fieldKind: 'email'
+   790→   790→  });
+   791→   791→  if (res.ok) {
+   792→   792→    showToast('آدرس ایمیل در کادر سایت درج شد ✍️');
+   793→   793→  } else {
+   794→   794→    showToast(res.error || 'ایمیل کپی شد (دستی Paste کنید).', true);
+   795→   795→  }
+   796→   796→});
+   797→   797→
+   798→   798→async function refreshInboxMessages(silent = false) {
+   799→   799→  if (!mailState.activeMailboxId) return;
+   800→   800→  if (!silent) {
+   801→   801→    els.refreshInboxBtn.disabled = true;
+   802→   802→    els.inboxPollStatus.textContent = '⏳ در حال بررسی...';
+   803→   803→  }
+   804→   804→
+   805→   805→  const res = await sendMsg({
+   806→   806→    type: 'MAIL_LIST_MESSAGES',
+   807→   807→    mailboxId: mailState.activeMailboxId
+   808→   808→  });
+   809→   809→
+   810→   810→  els.refreshInboxBtn.disabled = false;
+   811→   811→  els.inboxPollStatus.textContent = '● زنده';
+   812→   812→
+   813→   813→  if (res.ok) {
+   814→   814→    mailState.messages = res.messages || [];
+   815→   815→    const unseenCount = mailState.messages.filter((m) => !m.seen).length;
+   816→   816→    els.mailUnreadBadge.classList.toggle('hidden', unseenCount === 0);
+   817→   817→    els.mailUnreadBadge.textContent = toFa(unseenCount);
+   818→   818→    renderMessagesList();
+   819→   819→  } else if (!silent) {
+   820→   820→    showToast(res.error || 'خطا در دریافت پیام‌ها', true);
+   821→   821→  }
+   822→   822→}
+   823→   823→
+   824→   824→els.refreshInboxBtn.addEventListener('click', () => refreshInboxMessages(false));
+   825→   825→
+   826→   826→function renderMessagesList() {
+   827→   827→  els.messagesList.innerHTML = '';
+   828→   828→  const list = mailState.messages || [];
+   829→   829→  els.emptyInboxState.classList.toggle('hidden', list.length > 0);
+   830→   830→
+   831→   831→  list.forEach((m) => {
+   832→   832→    const item = document.createElement('div');
+   833→   833→    item.className = 'msg-item' + (!m.seen ? ' unseen' : '');
+   834→   834→
+   835→   835→    const top = document.createElement('div');
+   836→   836→    top.className = 'msg-top';
+   837→   837→
+   838→   838→    const subj = document.createElement('div');
+   839→   839→    subj.className = 'msg-subject';
+   840→   840→    subj.textContent = m.subject;
+   841→   841→    top.appendChild(subj);
+   842→   842→
+   843→   843→    const from = document.createElement('div');
+   844→   844→    from.className = 'msg-from';
+   845→   845→    from.textContent = m.fromAddress || m.fromName;
+   846→   846→
+   847→   847→    item.appendChild(top);
+   848→   848→    item.appendChild(from);
+   849→   849→
+   850→   850→    if (m.otpCode) {
+   851→   851→      const otpBtn = document.createElement('button');
+   852→   852→      otpBtn.className = 'msg-otp-btn';
+   853→   853→      otpBtn.textContent = `🔑 کپی و درج کد تأیید: ${m.otpCode}`;
+   854→   854→      otpBtn.addEventListener('click', async (e) => {
+   855→   855→        e.stopPropagation();
+   856→   856→        await copyAndFillOtp(m.otpCode);
+   857→   857→      });
+   858→   858→      item.appendChild(otpBtn);
+   859→   859→    }
+   860→   860→
+   861→   861→    item.addEventListener('click', () => openMessageModal(m.id));
+   862→   862→    els.messagesList.appendChild(item);
+   863→   863→  });
+   864→   864→}
+   865→   865→
+   866→   866→async function copyAndFillOtp(code) {
+   867→   867→  await navigator.clipboard.writeText(code).catch(() => {});
+   868→   868→  const res = await sendMsg({
+   869→   869→    type: 'MAIL_FILL_IN_PAGE',
+   870→   870→    tabId: state.tabId,
+   871→   871→    value: code,
+   872→   872→    fieldKind: 'otp'
+   873→   873→  });
+   874→   874→  if (res.ok) {
+   875→   875→    showToast(`کد ${code} کپی و در سایت درج شد! ✅`);
+   876→   876→  } else {
+   877→   877→    showToast(`کد ${code} کپی شد! (Ctrl+V بزنید)`);
+   878→   878→  }
+   879→   879→}
+   880→   880→
+   881→   881→function htmlToCleanText(htmlArr, fallbackText) {
+   882→   882→  if (fallbackText && fallbackText.trim()) return fallbackText.trim();
+   883→   883→  if (!Array.isArray(htmlArr) || !htmlArr.length) return '(پیام بدون متن)';
+   884→   884→  try {
+   885→   885→    const doc = new DOMParser().parseFromString(htmlArr.join('\n'), 'text/html');
+   886→   886→    doc.querySelectorAll('script, style, noscript, iframe, object').forEach((el) => el.remove());
+   887→   887→    return (doc.body?.innerText || doc.body?.textContent || '').trim() || '(پیام بدون متن)';
+   888→   888→  } catch {
+   889→   889→    return '(خطا در نمایش متن پیام)';
+   890→   890→  }
+   891→   891→}
+   892→   892→
+   893→   893→async function openMessageModal(messageId) {
+   894→   894→  const res = await sendMsg({
+   895→   895→    type: 'MAIL_READ_MESSAGE',
+   896→   896→    mailboxId: mailState.activeMailboxId,
+   897→   897→    messageId
+   898→   898→  });
+   899→   899→  if (!res.ok) {
+   900→   900→    showToast(res.error || 'خطا در باز کردن پیام', true);
+   901→   901→    return;
+   902→   902→  }
+   903→   903→
+   904→   904→  const msg = res.message;
+   905→   905→  mailState.readingMessageId = msg.id;
+   906→   906→  els.mailModalSubject.textContent = msg.subject;
+   907→   907→  els.mailModalFrom.textContent = `From: ${msg.fromName ? msg.fromName + ' <' + msg.fromAddress + '>' : msg.fromAddress}`;
+   908→   908→  els.deleteMessageBtn.classList.toggle('hidden', res.canDelete === false);
+   909→   909→
+   910→   910→  // OTP Banner
+   911→   911→  if (msg.otpCode) {
+   912→   912→    els.mailModalOtpBox.classList.remove('hidden');
+   913→   913→    els.mailModalOtpCode.textContent = msg.otpCode;
+   914→   914→    els.copyModalOtpBtn.onclick = () => copyAndFillOtp(msg.otpCode);
+   915→   915→  } else {
+   916→   916→    els.mailModalOtpBox.classList.add('hidden');
+   917→   917→  }
+   918→   918→
+   919→   919→  // Verification Links
+   920→   920→  els.mailModalLinks.innerHTML = '';
+   921→   921→  if (Array.isArray(msg.links) && msg.links.length > 0) {
+   922→   922→    els.mailModalLinks.classList.remove('hidden');
+   923→   923→    msg.links.slice(0, 3).forEach((url, idx) => {
+   924→   924→      const btn = document.createElement('button');
+   925→   925→      btn.className = 'verify-link-btn';
+   926→   926→      btn.textContent =
+   927→   927→        idx === 0
+   928→   928→          ? '🔗 باز کردن لینک تأیید در تب فعلی'
+   929→   929→          : `🔗 باز کردن لینک ${toFa(idx + 1)}`;
+   930→   930→      btn.title = url;
+   931→   931→      btn.addEventListener('click', async () => {
+   932→   932→        if (state.tabId) {
+   933→   933→          await chrome.tabs.update(state.tabId, { url });
+   934→   934→        } else {
+   935→   935→          await chrome.tabs.create({ url });
+   936→   936→        }
+   937→   937→        window.close();
+   938→   938→      });
+   939→   939→      els.mailModalLinks.appendChild(btn);
+   940→   940→    });
+   941→   941→  } else {
+   942→   942→    els.mailModalLinks.classList.add('hidden');
+   943→   943→  }
+   944→   944→
+   945→   945→  els.mailModalBody.textContent = htmlToCleanText(msg.html, msg.text);
+   946→   946→  els.mailReadModal.classList.remove('hidden');
+   947→   947→
+   948→   948→  // Refresh unseen status
+   949→   949→  refreshInboxMessages(true);
+   950→   950→}
+   951→   951→
+   952→   952→els.closeMailModalBtn.addEventListener('click', () => {
+   953→   953→  els.mailReadModal.classList.add('hidden');
+   954→   954→});
+   955→   955→els.closeMailModalBtn2.addEventListener('click', () => {
+   956→   956→  els.mailReadModal.classList.add('hidden');
+   957→   957→});
+   958→   958→els.deleteMessageBtn.addEventListener('click', async () => {
+   959→   959→  if (!mailState.readingMessageId) return;
+   960→   960→  await sendMsg({
+   961→   961→    type: 'MAIL_DELETE_MESSAGE',
+   962→   962→    mailboxId: mailState.activeMailboxId,
+   963→   963→    messageId: mailState.readingMessageId
+   964→   964→  });
+   965→   965→  els.mailReadModal.classList.add('hidden');
+   966→   966→  showToast('پیام حذف شد.');
+   967→   967→  refreshInboxMessages(true);
+   968→   968→});
+   969→   969→
+   970→   970→// ----------------------------------------------------------------------------
+   971→   971→// Account Switcher Event Listeners
+   972→   972→// ----------------------------------------------------------------------------
+   973→   973→
+   974→   974→async function handleSwitchTo(accountId) {
+   975→   975→  els.nextAccountBtn.disabled = true;
+   976→   976→  els.prevAccountBtn.disabled = true;
+   977→   977→  const res = await sendMsg({
+   978→   978→    type: 'SWITCH_TO_ACCOUNT',
+   979→   979→    tabId: state.tabId,
+   980→   980→    accountId
+   981→   981→  });
+   982→   982→  if (res.ok) {
+   983→   983→    showToast(`در حال ورود به «${res.accountName}»...`);
+   984→   984→    await loadState();
+   985→   985→  } else {
+   986→   986→    showToast(res.error || 'خطا در جابه‌جایی اکانت', true);
+   987→   987→    await loadState();
+   988→   988→  }
+   989→   989→}
+   990→   990→
+   991→   991→els.nextAccountBtn.addEventListener('click', async () => {
+   992→   992→  els.nextAccountBtn.disabled = true;
+   993→   993→  const res = await sendMsg({
+   994→   994→    type: 'SWITCH_CYCLE',
+   995→   995→    tabId: state.tabId,
+   996→   996→    direction: 1
+   997→   997→  });
+   998→   998→  if (res.ok) {
+   999→   999→    showToast(`جابه‌جایی به «${res.accountName}» انجام شد ⚡`);
+  1000→  1000→    await loadState();
+  1001→  1001→  } else {
+  1002→  1002→    showToast(res.error || 'خطا در جابه‌جایی', true);
+  1003→  1003→    await loadState();
+  1004→  1004→  }
+  1005→  1005→});
+  1006→  1006→
+  1007→  1007→els.prevAccountBtn.addEventListener('click', async () => {
+  1008→  1008→  els.prevAccountBtn.disabled = true;
+  1009→  1009→  const res = await sendMsg({
+  1010→  1010→    type: 'SWITCH_CYCLE',
+  1011→  1011→    tabId: state.tabId,
+  1012→  1012→    direction: -1
+  1013→  1013→  });
+  1014→  1014→  if (res.ok) {
+  1015→  1015→    showToast(`بازگشت به «${res.accountName}» انجام شد`);
+  1016→  1016→    await loadState();
+  1017→  1017→  } else {
+  1018→  1018→    showToast(res.error || 'خطا در جابه‌جایی', true);
+  1019→  1019→    await loadState();
+  1020→  1020→  }
+  1021→  1021→});
+  1022→  1022→
+  1023→  1023→els.openBatchBtn.addEventListener('click', async () => {
+  1024→  1024→  const countVal = els.batchCountSelect.value;
+  1025→  1025→  els.openBatchBtn.disabled = true;
+  1026→  1026→  const res = await sendMsg({
+  1027→  1027→    type: 'OPEN_BATCH_ISOLATED_TABS',
+  1028→  1028→    tabId: state.tabId,
+  1029→  1029→    url: state.url,
+  1030→  1030→    count: countVal
+  1031→  1031→  });
+  1032→  1032→  if (res.ok) {
+  1033→  1033→    showToast(`در حال باز کردن همزمان ${toFa(res.openingCount)} تب مجزا... 🚀`);
+  1034→  1034→    setTimeout(() => window.close(), 650);
+  1035→  1035→  } else {
+  1036→  1036→    els.openBatchBtn.disabled = false;
+  1037→  1037→    showToast(res.error || 'خطا در باز کردن تب‌ها', true);
+  1038→  1038→  }
+  1039→  1039→});
+  1040→  1040→
+  1041→  1041→async function saveCurrentAccount() {
+  1042→  1042→  const name = els.accountNameInput.value.trim();
+  1043→  1043→  const note = els.accountNoteInput.value.trim();
+  1044→  1044→  const autoLinkActiveMail =
+  1045→  1045→    Boolean(mailState.activeMailboxId) && els.chkLinkActiveMail.checked;
+  1046→  1046→
+  1047→  1047→  els.saveCurrentBtn.disabled = true;
+  1048→  1048→
+  1049→  1049→  const res = await sendMsg({
+  1050→  1050→    type: 'SAVE_CURRENT_ACCOUNT',
+  1051→  1051→    tabId: state.tabId,
+  1052→  1052→    name,
+  1053→  1053→    note,
+  1054→  1054→    autoLinkActiveMail
+  1055→  1055→  });
+  1056→  1056→
+  1057→  1057→  els.saveCurrentBtn.disabled = false;
+  1058→  1058→  if (res.ok) {
+  1059→  1059→    els.accountNameInput.value = '';
+  1060→  1060→    els.accountNoteInput.value = '';
+  1061→  1061→    showToast(`«${res.account.name}» با موفقیت ذخیره شد ✅`);
+  1062→  1062→    await loadState();
+  1063→  1063→  } else {
+  1064→  1064→    showToast(res.error || 'خطا در ذخیره اکانت', true);
+  1065→  1065→  }
+  1066→  1066→}
+  1067→  1067→
+  1068→  1068→els.saveCurrentBtn.addEventListener('click', saveCurrentAccount);
+  1069→  1069→els.accountNameInput.addEventListener('keydown', (e) => {
+  1070→  1070→  if (e.key === 'Enter') saveCurrentAccount();
+  1071→  1071→});
+  1072→  1072→els.accountNoteInput.addEventListener('keydown', (e) => {
+  1073→  1073→  if (e.key === 'Enter') saveCurrentAccount();
+  1074→  1074→});
+  1075→  1075→
+  1076→  1076→els.newSessionBtn.addEventListener('click', async () => {
+  1077→  1077→  els.newSessionBtn.disabled = true;
+  1078→  1078→  const res = await sendMsg({
+  1079→  1079→    type: 'NEW_CLEAN_SESSION',
+  1080→  1080→    tabId: state.tabId
+  1081→  1081→  });
+  1082→  1082→  els.newSessionBtn.disabled = false;
+  1083→  1083→
+  1084→  1084→  if (res.ok) {
+  1085→  1085→    showToast('نشست پاک شد! اکنون اکانت بعدی را لاگین و ذخیره کنید.');
+  1086→  1086→    await loadState();
+  1087→  1087→  } else {
+  1088→  1088→    showToast(res.error || 'خطا در ایجاد نشست جدید', true);
+  1089→  1089→  }
+  1090→  1090→});
+  1091→  1091→
+  1092→  1092→els.searchInput.addEventListener('input', (e) => {
+  1093→  1093→  searchQuery = e.target.value || '';
+  1094→  1094→  renderAccountsList();
+  1095→  1095→});
+  1096→  1096→
+  1097→  1097→els.toggleSettingsBtn.addEventListener('click', () => {
+  1098→  1098→  els.settingsPanel.classList.toggle('hidden');
+  1099→  1099→});
+  1100→  1100→els.closeSettingsBtn.addEventListener('click', () => {
+  1101→  1101→  els.settingsPanel.classList.add('hidden');
+  1102→  1102→});
+  1103→  1103→
+  1104→  1104→async function updateSetting(patch) {
+  1105→  1105→  if (!state.siteKey) return;
+  1106→  1106→  const res = await sendMsg({
+  1107→  1107→    type: 'UPDATE_SETTINGS',
+  1108→  1108→    siteKey: state.siteKey,
+  1109→  1109→    patch
+  1110→  1110→  });
+  1111→  1111→  if (res.ok) {
+  1112→  1112→    state.settings = res.settings;
+  1113→  1113→    showToast('تنظیمات ذخیره شد.');
+  1114→  1114→  }
+  1115→  1115→}
+  1116→  1116→
+  1117→  1117→els.chkFloatingWidget.addEventListener('change', (e) => {
+  1118→  1118→  updateSetting({ floatingWidget: e.target.checked });
+  1119→  1119→});
+  1120→  1120→els.chkAutoSync.addEventListener('change', (e) => {
+  1121→  1121→  updateSetting({ autoSync: e.target.checked });
+  1122→  1122→});
+  1123→  1123→els.chkIncludeStorage.addEventListener('change', (e) => {
+  1124→  1124→  updateSetting({ includeStorage: e.target.checked });
+  1125→  1125→});
+  1126→  1126→
+  1127→  1127→function downloadJson(filename, dataObj) {
+  1128→  1128→  const blob = new Blob([JSON.stringify(dataObj, null, 2)], {
+  1129→  1129→    type: 'application/json'
+  1130→  1130→  });
+  1131→  1131→  const url = URL.createObjectURL(blob);
+  1132→  1132→  const a = document.createElement('a');
+  1133→  1133→  a.href = url;
+  1134→  1134→  a.download = filename;
+  1135→  1135→  document.body.appendChild(a);
+  1136→  1136→  a.click();
+  1137→  1137→  a.remove();
+  1138→  1138→  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  1139→  1139→}
+  1140→  1140→
+  1141→  1141→els.exportSiteBtn.addEventListener('click', async () => {
+  1142→  1142→  const res = await sendMsg({
+  1143→  1143→    type: 'EXPORT_DATA',
+  1144→  1144→    scope: 'site',
+  1145→  1145→    siteKey: state.siteKey
+  1146→  1146→  });
+  1147→  1147→  if (res.ok) {
+  1148→  1148→    const dateStr = new Date().toISOString().slice(0, 10);
+  1149→  1149→    downloadJson(`accounts-${state.siteKey || 'site'}-${dateStr}.json`, res.backup);
+  1150→  1150→    showToast('فایل بکاپ دانلود شد.');
+  1151→  1151→  }
+  1152→  1152→});
+  1153→  1153→
+  1154→  1154→els.exportAllBtn.addEventListener('click', async () => {
+  1155→  1155→  const res = await sendMsg({
+  1156→  1156→    type: 'EXPORT_DATA',
+  1157→  1157→    scope: 'all'
+  1158→  1158→  });
+  1159→  1159→  if (res.ok) {
+  1160→  1160→    const dateStr = new Date().toISOString().slice(0, 10);
+  1161→  1161→    downloadJson(`all-accounts-and-mails-${dateStr}.json`, res.backup);
+  1162→  1162→    showToast('فایل بکاپ کامل دانلود شد.');
+  1163→  1163→  }
+  1164→  1164→});
+  1165→  1165→
+  1166→  1166→els.importBtn.addEventListener('click', () => {
+  1167→  1167→  els.importFileInput.value = '';
+  1168→  1168→  els.importFileInput.click();
+  1169→  1169→});
+  1170→  1170→
+  1171→  1171→els.importFileInput.addEventListener('change', async (e) => {
+  1172→  1172→  const file = e.target.files?.[0];
+  1173→  1173→  if (!file) return;
+  1174→  1174→  try {
+  1175→  1175→    const text = await file.text();
+  1176→  1176→    const parsed = JSON.parse(text);
+  1177→  1177→    const res = await sendMsg({
+  1178→  1178→      type: 'IMPORT_DATA',
+  1179→  1179→      backup: parsed,
+  1180→  1180→      mode: 'merge'
+  1181→  1181→    });
+  1182→  1182→    if (res.ok) {
+  1183→  1183→      showToast('بکاپ اکانت‌ها و ایمیل‌ها با موفقیت بازیابی شد!');
+  1184→  1184→      await loadState();
+  1185→  1185→    } else {
+  1186→  1186→      showToast(res.error || 'فایل نامعتبر است.', true);
+  1187→  1187→    }
+  1188→  1188→  } catch {
+  1189→  1189→    showToast('خطا در خواندن فایل JSON.', true);
+  1190→  1190→  }
+  1191→  1191→});
+  1192→  1192→
+  1193→  1193→function openEditModal(acc) {
+  1194→  1194→  editingAccountId = acc.id;
+  1195→  1195→  editingColor = acc.color || COLORS[0];
+  1196→  1196→  els.editNameInput.value = acc.name;
+  1197→  1197→  els.editNoteInput.value = acc.note || '';
+  1198→  1198→  renderColorSwatches();
+  1199→  1199→  els.editModal.classList.remove('hidden');
+  1200→  1200→  els.editNameInput.focus();
+  1201→  1201→}
+  1202→  1202→
+  1203→  1203→function renderColorSwatches() {
+  1204→  1204→  els.editColorPicker.innerHTML = '';
+  1205→  1205→  COLORS.forEach((c) => {
+  1206→  1206→    const sw = document.createElement('div');
+  1207→  1207→    sw.className = 'color-swatch' + (c === editingColor ? ' selected' : '');
+  1208→  1208→    sw.style.background = c;
+  1209→  1209→    sw.addEventListener('click', () => {
+  1210→  1210→      editingColor = c;
+  1211→  1211→      renderColorSwatches();
+  1212→  1212→    });
+  1213→  1213→    els.editColorPicker.appendChild(sw);
+  1214→  1214→  });
+  1215→  1215→}
+  1216→  1216→
+  1217→  1217→els.cancelEditBtn.addEventListener('click', () => {
+  1218→  1218→  editingAccountId = null;
+  1219→  1219→  els.editModal.classList.add('hidden');
+  1220→  1220→});
+  1221→  1221→
+  1222→  1222→els.saveEditBtn.addEventListener('click', async () => {
+  1223→  1223→  if (!editingAccountId) return;
+  1224→  1224→  const name = els.editNameInput.value.trim();
+  1225→  1225→  const note = els.editNoteInput.value.trim();
+  1226→  1226→  if (!name) {
+  1227→  1227→    showToast('نام اکانت نمی‌تواند خالی باشد.', true);
+  1228→  1228→    return;
+  1229→  1229→  }
+  1230→  1230→
+  1231→  1231→  await sendMsg({
+  1232→  1232→    type: 'EDIT_ACCOUNT_META',
+  1233→  1233→    siteKey: state.siteKey,
+  1234→  1234→    accountId: editingAccountId,
+  1235→  1235→    patch: { name, note, color: editingColor }
+  1236→  1236→  });
+  1237→  1237→
+  1238→  1238→  editingAccountId = null;
+  1239→  1239→  els.editModal.classList.add('hidden');
+  1240→  1240→  showToast('مشخصات اکانت ویرایش شد.');
+  1241→  1241→  await loadState();
+  1242→  1242→});
+  1243→  1243→
+  1244→  1244→loadState();
+  1245→  1245→
