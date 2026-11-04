@@ -1,0 +1,10 @@
+# محلی / Local
+*.zip
+*.crx
+*.pem
+.DS_Store
+Thumbs.db
+
+# فایل‌های کاری / scratch files
+*.log
+*.tmp
