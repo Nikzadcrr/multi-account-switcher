@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  @font-face {
+    font-family: 'Vazirmatn';
+    src: url('file:///home/z/.fonts/vazirmatn.ttf');
+    font-weight: 100 900;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 2050px; overflow: hidden; }
+  body {
+    font-family: 'Vazirmatn', sans-serif;
+    background:
+      radial-gradient(1300px 650px at 80% -12%, rgba(56,189,248,.17), transparent 62%),
+      radial-gradient(1100px 650px at 10% 112%, rgba(52,211,153,.14), transparent 62%),
+      linear-gradient(160deg, #0a1122 0%, #0e1729 46%, #0a1220 100%);
+    color: #e2e8f0;
+    position: relative;
+  }
+  .dots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(148,163,184,.11) 1.1px, transparent 1.6px);
+    background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(1200px 900px at 50% 40%, #000 30%, transparent 78%);
+    pointer-events: none;
+  }
+  .wrap { position: relative; padding: 54px 64px 46px; display: flex; flex-direction: column; align-items: center; }
+
+  /* ---------- header ---------- */
+  .chips { display: flex; gap: 14px; margin-bottom: 26px; }
+  .chip {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 20px; border-radius: 999px;
+    background: rgba(148,163,184,.08);
+    border: 1px solid rgba(148,163,184,.22);
+    font-size: 21px; font-weight: 600; color: #cbd5e1;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .chip b { color: #f1f5f9; font-weight: 700; }
+  h1 {
+    font-size: 78px; font-weight: 900; line-height: 1.28;
+    text-align: center; color: #f8fafc; letter-spacing: -0.5px;
+  }
+  h1 .grad {
+    background: linear-gradient(95deg, #7dd3fc 10%, #34d399 90%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub {
+    margin-top: 16px; font-size: 27px; font-weight: 500; color: #94a3b8;
+    text-align: center; max-width: 1480px; line-height: 1.9;
+  }
+  .sub b { color: #cbd5e1; font-weight: 700; }
+
+  /* ---------- screenshot windows ---------- */
+  .row { display: flex; justify-content: center; align-items: flex-end; }
+  .hero-row { gap: 40px; margin-top: 44px; }
+  .win {
+    background: #0b1322;
+    border: 1px solid rgba(148,163,184,.26);
+    border-radius: 22px; overflow: hidden;
+    box-shadow: 0 34px 70px rgba(2,6,17,.62), 0 6px 18px rgba(2,6,17,.5);
+  }
+  .win .bar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 12px 18px; background: rgba(148,163,184,.09);
+    border-bottom: 1px solid rgba(148,163,184,.14);
+  }
+  .win .bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .win .bar .r { background: #f87171; } .win .bar .y { background: #fbbf24; } .win .bar .g { background: #34d399; }
+  .win .bar span {
+    flex: 1; text-align: center; font-size: 17px; font-weight: 700; color: #94a3b8;
+    transform: translateX(-16px); white-space: nowrap;
+  }
+  .win img { display: block; width: 100%; }
+  .hero { width: 452px; }
+  .hero img { height: 674px; object-fit: cover; object-position: top; }
+  .hero.mid {
+    transform: translateY(-18px);
+    border-color: rgba(125,211,252,.45);
+    box-shadow: 0 42px 90px rgba(2,6,17,.7), 0 0 60px rgba(56,189,248,.16), 0 6px 18px rgba(2,6,17,.5);
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin-bottom: 12px; padding: 7px 18px; border-radius: 999px;
+    font-size: 20px; font-weight: 800;
+  }
+  .badge .n {
+    width: 27px; height: 27px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 900; color: #06101f;
+  }
+  .b-sky  { background: rgba(56,189,248,.12); border: 1px solid rgba(56,189,248,.38); color: #7dd3fc; }
+  .b-sky .n { background: #7dd3fc; }
+  .b-em   { background: rgba(52,211,153,.12); border: 1px solid rgba(52,211,153,.38); color: #6ee7b7; }
+  .b-em .n { background: #34d399; }
+  .col { display: flex; flex-direction: column; align-items: center; }
+
+  .mini-row { gap: 24px; margin-top: 34px; }
+  .mini { width: 316px; }
+  .mini .bar { padding: 9px 14px; }
+  .mini .bar i { width: 8px; height: 8px; }
+  .mini .bar span { font-size: 14px; transform: translateX(-12px); }
+  .mini img { height: 470px; object-fit: cover; object-position: top; }
+  .mini-wrap .badge { font-size: 17px; padding: 5px 14px; margin-bottom: 10px; }
+  .b-slate { background: rgba(148,163,184,.09); border: 1px solid rgba(148,163,184,.3); color: #cbd5e1; }
+  .mini-wrap:nth-child(odd) { transform: translateY(10px); }
+
+  /* ---------- feature chips ---------- */
+  .feats { display: flex; gap: 14px; margin-top: 46px; flex-wrap: nowrap; justify-content: center; }
+  .feat {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-radius: 14px;
+    background: rgba(148,163,184,.07);
+    border: 1px solid rgba(148,163,184,.2);
+    font-size: 20px; font-weight: 600; color: #cbd5e1; white-space: nowrap;
+  }
+  .feat svg { width: 21px; height: 21px; stroke: #7dd3fc; flex: none; }
+  .feat:nth-child(even) svg { stroke: #34d399; }
+
+  /* ---------- footer ---------- */
+  .foot {
+    margin-top: 40px; display: flex; align-items: center; gap: 22px;
+    padding: 17px 34px; border-radius: 18px;
+    background: rgba(148,163,184,.07);
+    border: 1px solid rgba(148,163,184,.22);
+  }
+  .foot svg { width: 34px; height: 34px; fill: #f1f5f9; flex: none; }
+  .foot .url { font-size: 26px; font-weight: 800; color: #f1f5f9; direction: ltr; letter-spacing: .2px; }
+  .foot .sep { width: 1px; height: 30px; background: rgba(148,163,184,.3); }
+  .foot .hint { font-size: 21px; font-weight: 600; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="dots"></div>
+<div class="wrap">
+
+  <div class="chips">
+    <div class="chip"><span class="dot" style="background:#7dd3fc"></span>افزونهٔ کروم <b>· MV3</b></div>
+    <div class="chip"><span class="dot" style="background:#34d399"></span>کاملاً <b>سورس‌باز</b></div>
+    <div class="chip"><span class="dot" style="background:#fbbf24"></span>نسخهٔ <b>۴.۰.۰</b></div>
+  </div>
+
+  <h1>سوییچر مولتی‌اکانت <span class="grad">+ ایمیل موقت</span></h1>
+  <div class="sub">۳۰+ اکانت هر سایت را با <b>یک کلیک</b> جابه‌جا کنید و برای هر ثبت‌نام یک <b>ایمیل موقت آنی</b> بسازید — کد تأیید هم خودکار می‌رسد.</div>
+
+  <div class="row hero-row">
+    <div class="col">
+      <div class="badge b-sky"><span class="n">۱</span>ساخت ایمیل آنی</div>
+      <div class="win hero"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>ایمیل جدید</span></div><img src="file:///home/z/my-project/plugin/screenshots/create-mail.png"></div>
+    </div>
+    <div class="col">
+      <div class="badge b-sky"><span class="n">۲</span>صندوق ورودی زنده</div>
+      <div class="win hero mid"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>صندوق ورودی</span></div><img src="file:///home/z/my-project/plugin/screenshots/mail-inbox.png"></div>
+    </div>
+    <div class="col">
+      <div class="badge b-em"><span class="n">۳</span>کد تأیید، خودکار</div>
+      <div class="win hero"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>پیام دریافتی</span></div><img src="file:///home/z/my-project/plugin/screenshots/message-otp.png"></div>
+    </div>
+  </div>
+
+  <div class="row mini-row">
+    <div class="col mini-wrap">
+      <div class="badge b-slate">سوییچر اکانت</div>
+      <div class="win mini"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i></div><img src="file:///home/z/my-project/plugin/screenshots/accounts-view.png"></div>
+    </div>
+    <div class="col mini-wrap">
+      <div class="badge b-slate">کارت‌های اکانت</div>
+      <div class="win mini"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i></div><img src="file:///home/z/my-project/plugin/screenshots/account-cards.png"></div>
+    </div>
+    <div class="col mini-wrap">
+      <div class="badge b-slate">جست‌وجوی سریع</div>
+      <div class="win mini"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i></div><img src="file:///home/z/my-project/plugin/screenshots/quick-search.png"></div>
+    </div>
+    <div class="col mini-wrap">
+      <div class="badge b-slate">لیبل و سنجاق</div>
+      <div class="win mini"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i></div><img src="file:///home/z/my-project/plugin/screenshots/edit-labels.png"></div>
+    </div>
+    <div class="col mini-wrap">
+      <div class="badge b-slate">تنظیمات</div>
+      <div class="win mini"><div class="bar"><i class="r"></i><i class="y"></i><i class="g"></i></div><img src="file:///home/z/my-project/plugin/screenshots/settings.png"></div>
+    </div>
+  </div>
+
+  <div class="feats">
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>کپی فوری آدرس</div>
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>اعلان هنگام رسیدن کد</div>
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>لینک‌ها در تب جدید</div>
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>جست‌وجو با میان‌بر</div>
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>لیبل و سنجاق ایمیل‌ها</div>
+    <div class="feat"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>تم تیرهٔ شیشه‌ای</div>
+  </div>
+
+  <div class="foot">
+    <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+    <div class="url">github.com/Nikzadcrr/multi-account-switcher</div>
+    <div class="sep"></div>
+    <div class="hint">نصب در دو دقیقه · راهنمای کامل در README</div>
+  </div>
+
+</div>
+</body>
+</html>
