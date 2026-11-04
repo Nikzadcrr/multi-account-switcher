@@ -161,7 +161,6 @@ let mailState = {
 
 // رابط ساخت ایمیل — دقیقا مثل اپ Instant Mail: سرویس + گروه (تصادفی/دامنه/محبوب)
 const MAIL_PROVIDER_META = [
-  { key: 'gmail_real', icon: 'mail-check', label: 'جیمیل من (الیاس)' },
   { key: 'hd', icon: 'zap', label: 'اینسنت میل' },
   { key: 'hd_gmail', icon: 'mail', label: 'جیمیل آنی' },
   { key: 'temp-mail-io', icon: 'globe', label: 'Temp-Mail.io' },
@@ -241,46 +240,6 @@ const els = {
   mailServiceChips: document.getElementById('mailServiceChips'),
   imDomainGrid: document.getElementById('imDomainGrid'),
   imGroupTabsBox: document.getElementById('imGroupTabsBox'),
-  gmailAliasBox: document.getElementById('gmailAliasBox'),
-  gmailConnectedBox: document.getElementById('gmailConnectedBox'),
-  gmailConnectBox: document.getElementById('gmailConnectBox'),
-  gmailQuickConnectBtn: document.getElementById('gmailQuickConnectBtn'),
-  gmailAppPwBox: document.getElementById('gmailAppPwBox'),
-  openAppPwBtn: document.getElementById('openAppPwBtn'),
-  gmailPwEmail: document.getElementById('gmailPwEmail'),
-  gmailPwPass: document.getElementById('gmailPwPass'),
-  gmailPwConnectBtn: document.getElementById('gmailPwConnectBtn'),
-  gmailStatusEmail: document.getElementById('gmailStatusEmail'),
-  gmailDisconnectBtn: document.getElementById('gmailDisconnectBtn'),
-  gmailAliasPreviewLocal: document.getElementById('gmailAliasPreviewLocal'),
-  gmailPreviewPlus: document.getElementById('gmailPreviewPlus'),
-  gmailPreviewDomain: document.getElementById('gmailPreviewDomain'),
-  gmailDomainSelect: document.getElementById('gmailDomainSelect'),
-  gmailAliasGmailForm: document.getElementById('gmailAliasGmailForm'),
-  gmailAliasDomainForm: document.getElementById('gmailAliasDomainForm'),
-  gmailCustomLocal: document.getElementById('gmailCustomLocal'),
-  gmailNewDomainBox: document.getElementById('gmailNewDomainBox'),
-  gmailNewDomainInput: document.getElementById('gmailNewDomainInput'),
-  gmailAddDomainBtn: document.getElementById('gmailAddDomainBtn'),
-  gmailOpenDomainGuideBtn: document.getElementById('gmailOpenDomainGuideBtn'),
-  gmailDotMode: document.getElementById('gmailDotMode'),
-  gmailAliasNote: document.getElementById('gmailAliasNote'),
-  gmailTagInput: document.getElementById('gmailTagInput'),
-  openGmailWizardBtn: document.getElementById('openGmailWizardBtn'),
-  gmailWizardModal: document.getElementById('gmailWizardModal'),
-  closeGmailWizardBtn: document.getElementById('closeGmailWizardBtn'),
-  gwExtId: document.getElementById('gwExtId'),
-  gwRedirect: document.getElementById('gwRedirect'),
-  gwCopyExtIdBtn: document.getElementById('gwCopyExtIdBtn'),
-  gwCopyRedirectBtn: document.getElementById('gwCopyRedirectBtn'),
-  gwOpenConsoleBtn: document.getElementById('gwOpenConsoleBtn'),
-  gwOpenApiBtn: document.getElementById('gwOpenApiBtn'),
-  gwOpenTestersBtn: document.getElementById('gwOpenTestersBtn'),
-  gwOpenClientBtn: document.getElementById('gwOpenClientBtn'),
-  gwClientIdInput: document.getElementById('gwClientIdInput'),
-  gwConnectBtn: document.getElementById('gwConnectBtn'),
-  gwError: document.getElementById('gwError'),
-  gwErrorHint: document.getElementById('gwErrorHint'),
   activeMailMeta: document.getElementById('activeMailMeta'),
   mailCreateCard: document.getElementById('mailCreateCard'),
   closeCreateCardBtn: document.getElementById('closeCreateCardBtn'),
@@ -809,261 +768,6 @@ function renderAccountsList() {
 // Temp Mail & Live Inbox Controller
 // ----------------------------------------------------------------------------
 
-// ---------------- Gmail Real («جیمیل من») — وضعیت اتصال + ویزارد ----------------
-
-let gmailStatus = null; // کش آخرین GMAIL_GET_STATUS
-
-async function loadGmailStatus(force = false) {
-  if (!gmailStatus || force) {
-    const res = await sendMsg({ type: 'GMAIL_GET_STATUS' });
-    gmailStatus =
-      res?.ok
-        ? res
-        : {
-            ok: true,
-            connected: false,
-            email: '',
-            clientId: '',
-            mode: 'api',
-            customDomains: [],
-            extensionId: chrome.runtime.id || '',
-            redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
-          };
-  }
-  return gmailStatus;
-}
-
-let gmailPreviewBaseDomain = '@gmail.com'; // دامنهٔ جیمیل متصل — برای پیش‌نمایش
-
-async function renderGmailAliasBox() {
-  const st = await loadGmailStatus(true);
-  els.gmailAliasBox.classList.remove('hidden');
-  els.gmailConnectedBox.classList.toggle('hidden', !st.connected);
-  els.gmailConnectBox.classList.toggle('hidden', Boolean(st.connected));
-
-  if (st.connected) {
-    els.gmailStatusEmail.textContent =
-      st.mode === 'quick' ? `${st.email} · حالت سریع` : st.email;
-    const local = String(st.email).split('@')[0] || 'you';
-    els.gmailAliasPreviewLocal.textContent = local;
-    gmailPreviewBaseDomain = String(st.email).includes('@')
-      ? `@${String(st.email).split('@')[1]}`
-      : '@gmail.com';
-    renderGmailDomainSelect(Array.isArray(st.customDomains) ? st.customDomains : []);
-    applyGmailAliasMode();
-  }
-
-  fillWizardStaticFields(st);
-}
-
-function renderGmailDomainSelect(customDomains) {
-  const sel = els.gmailDomainSelect;
-  const prev = sel.dataset.prev || '';
-  sel.innerHTML = '';
-  const og = document.createElement('option');
-  og.value = '';
-  og.textContent = 'روی جیمیل خودت (gmail.com)';
-  sel.appendChild(og);
-  for (const d of customDomains) {
-    const o = document.createElement('option');
-    o.value = d;
-    o.textContent = `دامنهٔ خودت (@${d})`;
-    sel.appendChild(o);
-  }
-  const on = document.createElement('option');
-  on.value = '__new';
-  on.textContent = 'افزودن دامنهٔ اختصاصی...';
-  sel.appendChild(on);
-  if (prev && Array.from(sel.options).some((o) => o.value === prev)) {
-    sel.value = prev;
-  }
-}
-
-function applyGmailAliasMode() {
-  if (!els.gmailDomainSelect) return;
-  const v = els.gmailDomainSelect.value;
-  const isCustom = Boolean(v) && v !== '__new';
-  els.gmailNewDomainBox.classList.toggle('hidden', v !== '__new');
-  els.gmailAliasGmailForm.classList.toggle('hidden', isCustom || v === '__new');
-  els.gmailAliasDomainForm.classList.toggle('hidden', !isCustom);
-  if (!isCustom) {
-    const dot = els.gmailDotMode && els.gmailDotMode.checked;
-    els.gmailPreviewPlus.classList.toggle('hidden', Boolean(dot));
-    els.gmailTagInput.classList.toggle('hidden', Boolean(dot));
-    els.gmailPreviewDomain.textContent = dot
-      ? '@gmail.com / @googlemail.com'
-      : gmailPreviewBaseDomain;
-    els.gmailAliasNote.textContent = dot
-      ? 'ترفند نقطه‌گذاری: به‌جای +tag، نقطه‌های تصادفی داخل اسم جیمیلت می‌گذاریم (مثل you.name@gmail.com) و دامنه را هم بین gmail.com و googlemail.com می‌چرخانیم. گوگل همه را به صندوق خودت می‌فرستد، ولی خیلی از سایت‌ها آن را الیاس تشخیص نمی‌دهند و کد را می‌فرستند.'
-      : 'نامه‌های این آدرس به صندوق جیمیل خودت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. اگر سایتی + را رد کرد یا کد نفرستاد، حالت «بدون +» را روشن کن یا دامنهٔ اختصاصی اضافه کن.';
-  } else {
-    els.gmailAliasNote.textContent =
-      'نامه‌های دامنهٔ خودت با فوروارد (Email Routing) به جیمیلت می‌آیند و همین‌جا زنده نمایش داده می‌شوند. اگر هنوز فوروارد را نساخته‌ای، دکمهٔ راهنما را بزن.';
-  }
-}
-
-function fillWizardStaticFields(st) {
-  if (!st) return;
-  els.gwExtId.textContent = st.extensionId || chrome.runtime.id || '';
-  els.gwRedirect.textContent = st.redirectUri || `https://${chrome.runtime.id}.chromiumapp.org/`;
-  if (!els.gwClientIdInput.value && st.clientId) {
-    els.gwClientIdInput.value = st.clientId;
-  }
-}
-
-function openGmailWizard() {
-  els.gwError.classList.add('hidden');
-  els.gwErrorHint.classList.add('hidden');
-  fillWizardStaticFields(gmailStatus);
-  els.gmailWizardModal.classList.remove('hidden');
-}
-
-els.openGmailWizardBtn.addEventListener('click', openGmailWizard);
-els.closeGmailWizardBtn.addEventListener('click', () => {
-  els.gmailWizardModal.classList.add('hidden');
-});
-
-gwOpenTab(els.gwOpenConsoleBtn, 'https://console.cloud.google.com/projectcreate');
-gwOpenTab(els.gwOpenApiBtn, 'https://console.cloud.google.com/apis/library/gmail.googleapis.com');
-gwOpenTab(els.gwOpenTestersBtn, 'https://console.cloud.google.com/auth/audience');
-gwOpenTab(els.gwOpenClientBtn, 'https://console.cloud.google.com/apis/credentials/oauthclient', true);
-gwOpenTab(els.openAppPwBtn, 'https://myaccount.google.com/apppasswords');
-
-function gwOpenTab(btn, url, copyBefore = false) {
-  btn.addEventListener('click', async () => {
-    try {
-      if (copyBefore) {
-        const ok = await copyText(els.gwExtId.textContent.trim());
-        if (ok) showToast('Extension ID کپی شد — در فرم گوگل Paste کن (Ctrl+V)');
-      }
-      await chrome.tabs.create({ url, active: true });
-    } catch {}
-  });
-}
-
-async function gwCopyField(btn, el, label) {
-  btn.addEventListener('click', async () => {
-    const ok = await copyText(el.textContent.trim());
-    showToast(ok ? `${label} کپی شد` : 'کپی ناموفق بود', !ok);
-  });
-}
-gwCopyField(els.gwCopyExtIdBtn, els.gwExtId, 'Extension ID');
-gwCopyField(els.gwCopyRedirectBtn, els.gwRedirect, 'Redirect URI');
-
-els.gwConnectBtn.addEventListener('click', async () => {
-  const clientId = els.gwClientIdInput.value.trim();
-  if (!clientId) {
-    els.gwError.textContent = 'Client ID را در مرحلهٔ آخر ویزارد وارد کن.';
-    els.gwError.classList.remove('hidden');
-    return;
-  }
-
-  els.gwConnectBtn.disabled = true;
-  const original = els.gwConnectBtn.innerHTML;
-  els.gwConnectBtn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
-
-  try {
-    const res = await sendMsg({ type: 'GMAIL_CONNECT', clientId });
-    if (!res?.ok) throw new Error(res?.error || 'اتصال جیمیل ناموفق بود.');
-
-    gmailStatus = {
-      ok: true,
-      connected: true,
-      email: res.email,
-      clientId: res.clientId || clientId,
-      extensionId: res.extensionId || '',
-      redirectUri: res.redirectUri || ''
-    };
-    els.gwError.classList.add('hidden');
-    els.gwError.textContent = '';
-    els.gwErrorHint.classList.add('hidden');
-    els.gmailWizardModal.classList.add('hidden');
-    await renderGmailAliasBox();
-    showToast(`جیمیل متصل شد: ${res.email}`);
-  } catch (e) {
-    els.gwError.textContent = e?.message || 'اتصال ناموفق بود.';
-    els.gwError.classList.remove('hidden');
-    els.gwErrorHint.classList.remove('hidden');
-  } finally {
-    els.gwConnectBtn.disabled = false;
-    els.gwConnectBtn.innerHTML = original;
-  }
-});
-
-els.gmailDisconnectBtn.addEventListener('click', async () => {
-  const res = await sendMsg({ type: 'GMAIL_DISCONNECT' });
-  if (res?.ok) {
-    gmailStatus = null;
-    await renderGmailAliasBox();
-    showToast('اتصال جیمیل قطع شد (صندوق‌های الیاس حفظ شدند).');
-  }
-});
-
-els.gmailQuickConnectBtn.addEventListener('click', async () => {
-  const btn = els.gmailQuickConnectBtn;
-  btn.disabled = true;
-  const original = btn.innerHTML;
-  btn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
-  try {
-    const res = await sendMsg({ type: 'GMAIL_CONNECT_QUICK' });
-    if (!res?.ok) {
-      if (res?.code === 'FEED_AUTH_401') {
-        els.gmailAppPwBox.classList.remove('hidden');
-      }
-      throw new Error(res?.error || 'اتصال فوری ناموفق بود.');
-    }
-    gmailStatus = {
-      ok: true,
-      connected: true,
-      email: res.email,
-      clientId: '',
-      mode: 'quick',
-      extensionId: chrome.runtime.id || '',
-      redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
-    };
-    await renderGmailAliasBox();
-    showToast(`جیمیل متصل شد (حالت سریع): ${res.email}`);
-  } catch (e) {
-    showToast(e?.message || 'اتصال فوری ناموفق بود.', true);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = original;
-  }
-});
-
-els.gmailPwConnectBtn.addEventListener('click', async () => {
-  const btn = els.gmailPwConnectBtn;
-  const email = els.gmailPwEmail.value.trim();
-  const pw = els.gmailPwPass.value.replace(/\s+/g, '');
-  if (!email || !pw) {
-    showToast('ایمیل جیمیل و رمز برنامه را وارد کن.', true);
-    return;
-  }
-  btn.disabled = true;
-  const original = btn.innerHTML;
-  btn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال اتصال...</span>`;
-  try {
-    const res = await sendMsg({ type: 'GMAIL_CONNECT_QUICK_PW', email, appPassword: pw });
-    if (!res?.ok) throw new Error(res?.error || 'اتصال ناموفق بود.');
-    gmailStatus = {
-      ok: true,
-      connected: true,
-      email: res.email,
-      clientId: '',
-      mode: 'quick',
-      extensionId: chrome.runtime.id || '',
-      redirectUri: `https://${chrome.runtime.id}.chromiumapp.org/`
-    };
-    await renderGmailAliasBox();
-    showToast(`جیمیل متصل شد (رمز برنامه): ${res.email}`);
-  } catch (e) {
-    showToast(e?.message || 'اتصال ناموفق بود.', true);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = original;
-  }
-});
-
 // ---------------- Instant Mail app-style create UI ----------------
 
 async function ensureProviderDomains(provider) {
@@ -1107,18 +811,6 @@ function renderGroupTabs() {
 async function renderDomainGrid() {
   els.imDomainGrid.innerHTML = '';
 
-  // سرویس «جیمیل من (الیاس)» — بدون دامنه و گروه؛ فرم اتصال/الیاس
-  if (mailUi.provider === 'gmail_real') {
-    els.imGroupTabsBox.classList.add('hidden');
-    els.imDomainGrid.classList.add('hidden');
-    els.mailCustomUser.classList.add('hidden');
-    els.gmailAliasBox.classList.remove('hidden');
-    els.createMailBtn.innerHTML = `${ic('at-sign')}<span>ساخت الیاس جیمیل</span>`;
-    await renderGmailAliasBox();
-    return;
-  }
-
-  els.gmailAliasBox.classList.add('hidden');
   els.imGroupTabsBox.classList.remove('hidden');
 
   if (mailUi.group === 'random') {
@@ -1236,82 +928,24 @@ function renderMailUI() {
     els.currentEmailText.textContent = active.address;
 
     if (els.activeMailMeta) {
-      if (active.provider === 'gmail_real' || active.ptype === 'gmail') {
-        els.activeMailMeta.textContent =
-          'این آدرس واقعی است؛ نامه‌ها به صندوق جیمیل خودت می‌آیند و همین‌جا زنده نمایش داده می‌شوند.';
-      } else {
-        els.activeMailMeta.textContent =
-          'آدرس به‌صورت خودکار ساخته می‌شود، حدود ۲ روز اعتبار دارد و قابل بازیابی نیست.';
-      }
+      els.activeMailMeta.textContent =
+        'آدرس به‌صورت خودکار ساخته می‌شود، حدود ۲ روز اعتبار دارد و قابل بازیابی نیست.';
     }
   }
 }
-
-els.gmailDomainSelect.addEventListener('change', () => {
-  els.gmailDomainSelect.dataset.prev = els.gmailDomainSelect.value;
-  applyGmailAliasMode();
-});
-
-els.gmailDotMode.addEventListener('change', applyGmailAliasMode);
-
-els.gmailAddDomainBtn.addEventListener('click', async () => {
-  const d = els.gmailNewDomainInput.value.trim().toLowerCase();
-  if (!d) {
-    showToast('دامنه را وارد کن (مثلاً mydomain.com).', true);
-    return;
-  }
-  els.gmailAddDomainBtn.disabled = true;
-  try {
-    const res = await sendMsg({ type: 'GMAIL_ADD_DOMAIN', domain: d });
-    if (!res?.ok) {
-      showToast(res?.error || 'دامنه ذخیره نشد.', true);
-      return;
-    }
-    els.gmailNewDomainInput.value = '';
-    gmailStatus = { ...gmailStatus, customDomains: res.customDomains || [] };
-    renderGmailDomainSelect(res.customDomains || []);
-    els.gmailDomainSelect.dataset.prev = d;
-    els.gmailDomainSelect.value = d;
-    applyGmailAliasMode();
-    showToast(`دامنهٔ ${d} اضافه شد — حالا هر اسمی روی آن بساز.`);
-  } finally {
-    els.gmailAddDomainBtn.disabled = false;
-  }
-});
-
-els.gmailOpenDomainGuideBtn.addEventListener('click', () => {
-  try {
-    chrome.tabs.create({ url: chrome.runtime.getURL('domain-setup.html') });
-  } catch {}
-});
 
 els.createMailBtn.addEventListener('click', async () => {
   els.createMailBtn.disabled = true;
   const originalLabel = els.createMailBtn.innerHTML;
   els.createMailBtn.innerHTML = `${ic('loader', 'ic spin')}<span>در حال ساخت...</span>`;
 
-  const isGmailAlias = mailUi.provider === 'gmail_real';
-  const isRandom = !isGmailAlias && mailUi.group === 'random';
-
-  // انتخاب‌های الیاس جیمیل: دامنه (جیمیل / دامنهٔ خودت) و حالت (+tag / بدون +)
-  const domainSelVal = isGmailAlias && els.gmailDomainSelect ? els.gmailDomainSelect.value : '';
-  const customDomain =
-    isGmailAlias && domainSelVal && domainSelVal !== '__new' ? domainSelVal : '';
-  const dotMode = isGmailAlias && !customDomain && els.gmailDotMode && els.gmailDotMode.checked;
+  const isRandom = mailUi.group === 'random';
 
   const res = await sendMsg({
     type: 'MAIL_CREATE_INBOX',
     provider: mailUi.provider,
     domain: isRandom ? '' : mailUi.domain,
-    customUser: isGmailAlias
-      ? customDomain
-        ? els.gmailCustomLocal.value.trim()
-        : els.gmailTagInput.value.trim()
-      : isRandom
-        ? ''
-        : els.mailCustomUser.value.trim(),
-    aliasStyle: dotMode ? 'dot' : 'plus',
-    aliasDomain: customDomain
+    customUser: isRandom ? '' : els.mailCustomUser.value.trim()
   });
 
   els.createMailBtn.disabled = false;
@@ -1319,8 +953,6 @@ els.createMailBtn.addEventListener('click', async () => {
 
   if (res.ok) {
     els.mailCustomUser.value = '';
-    els.gmailTagInput.value = '';
-    if (els.gmailCustomLocal) els.gmailCustomLocal.value = '';
     createCardOpen = false;
     mailState.activeMailboxId = res.activeMailboxId;
     mailState.mailboxes = res.mailboxes || [];
@@ -1331,13 +963,7 @@ els.createMailBtn.addEventListener('click', async () => {
     refreshInboxMessages();
 
     const copied = await copyText(res.mailbox.address);
-    showToast(
-      copied
-        ? isGmailAlias
-          ? `الیاس ساخته و کپی شد: ${res.mailbox.address}`
-          : `ایمیل ساخته و کپی شد: ${res.mailbox.address}`
-        : 'ایمیل جدید ساخته شد'
-    );
+    showToast(copied ? `ایمیل ساخته و کپی شد: ${res.mailbox.address}` : 'ایمیل جدید ساخته شد');
   } else {
     showToast(res.error || 'خطا در ساخت ایمیل', true);
   }
