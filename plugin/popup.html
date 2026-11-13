@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>سوییچر مولتی‌اکانت + ایمیل موقت</title>
   <link rel="stylesheet" href="popup.css" />
+  <link rel="stylesheet" href="agent.css" />
 </head>
 <body>
   <div class="app">
@@ -44,6 +45,11 @@
         <span data-icon="mail"></span>
         ایمیل موقت
         <span id="mailUnreadBadge" class="nav-badge hidden">۰</span>
+      </button>
+      <button id="tabAgentBtn" class="nav-tab">
+        <span data-icon="robot"></span>
+        ایجنت
+        <span id="agentVaultBadge" class="nav-badge hidden">۰</span>
       </button>
     </nav>
 
@@ -341,6 +347,164 @@
       </div>
     </div>
 
+    <!-- ================================================================== -->
+    <!-- VIEW 3: AGENT — ثبت‌نام خودکار + خزانه حساب‌ها                       -->
+    <!-- ================================================================== -->
+    <div id="agentView" class="agent-view hidden">
+      <!-- پیل‌های سوییچ بین پنل اجرا و خزانه -->
+      <div class="agent-pills">
+        <button id="agentRunPill" class="agent-pill active">
+          <span data-icon="zap" data-icon-class="ic ic-sm"></span>
+          ثبت‌نام خودکار
+        </button>
+        <button id="agentVaultPill" class="agent-pill">
+          <span data-icon="shield-check" data-icon-class="ic ic-sm"></span>
+          حساب‌های ذخیره‌شده
+          <span id="agentVaultPillCount" class="agent-pill-count">۰</span>
+        </button>
+      </div>
+
+      <!-- ------------------------------ پنل اجرای ایجنت ------------------------------ -->
+      <section id="agentRunPanel" class="card agent-card">
+        <div class="agent-site-row">
+          <span class="agent-site-label">سایت هدف:</span>
+          <span id="agentSiteBadge" class="agent-site-badge">—</span>
+          <span id="agentStatusChip" class="agent-status-chip hidden"></span>
+        </div>
+
+        <div class="agent-field">
+          <label class="agent-field-label" for="agentMailSelect">
+            <span data-icon="mail" data-icon-class="ic ic-sm"></span>
+            ایمیل موقت برای ثبت‌نام
+          </label>
+          <div class="agent-mail-row">
+            <select id="agentMailSelect" class="select-input agent-mail-select">
+              <option value="">صندوقی ندارید — بسازید</option>
+            </select>
+            <button id="agentNewMailBtn" class="btn btn-cyan btn-sm" title="ساخت سریع ایمیل تصادفی جدید">
+              <span data-icon="sparkles" data-icon-class="ic ic-sm"></span>
+              ایمیل جدید
+            </button>
+          </div>
+          <div id="agentMailHint" class="agent-hint">ایمیل ساخته‌شده به‌طور خودکار در خزانه به حساب همین سایت وصل می‌شود.</div>
+        </div>
+
+        <div class="agent-creds-grid">
+          <div class="agent-field">
+            <label class="agent-field-label" for="agentUsernameInput">
+              <span data-icon="user" data-icon-class="ic ic-sm"></span>
+              نام کاربری
+            </label>
+            <div class="agent-cred-row">
+              <input type="text" id="agentUsernameInput" class="input" placeholder="خودکار ساخته می‌شود" maxlength="40" />
+              <button id="agentGenUserBtn" class="icon-btn icon-btn-sm" title="ساخت مجدد نام کاربری">
+                <span data-icon="shuffle"></span>
+              </button>
+            </div>
+          </div>
+          <div class="agent-field">
+            <label class="agent-field-label" for="agentPasswordInput">
+              <span data-icon="key" data-icon-class="ic ic-sm"></span>
+              رمز عبور
+            </label>
+            <div class="agent-cred-row">
+              <input type="text" id="agentPasswordInput" class="input agent-pass-input" placeholder="خودکار ساخته می‌شود" maxlength="40" spellcheck="false" />
+              <button id="agentShowPwBtn" class="icon-btn icon-btn-sm" title="نمایش/پنهان کردن رمز">
+                <span data-icon="eye"></span>
+              </button>
+              <button id="agentGenPwBtn" class="icon-btn icon-btn-sm" title="ساخت رمز قوی جدید">
+                <span data-icon="refresh"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <label class="agent-check-row">
+          <input type="checkbox" id="agentAutoSubmit" checked />
+          <span>بعد از پر کردن و حل کپچا، فرم خودکار ارسال شود</span>
+        </label>
+        <label class="agent-check-row">
+          <input type="checkbox" id="agentAutoSave" checked />
+          <span>حساب ساخته‌شده خودکار در خزانه ذخیره شود</span>
+        </label>
+
+        <button id="agentStartBtn" class="btn btn-hero agent-start-btn">
+          <span data-icon="robot"></span>
+          <span>شروع ایجنت</span>
+        </button>
+        <div class="agent-run-actions hidden" id="agentRunActions">
+          <button id="agentContinueBtn" class="btn btn-success btn-sm hidden">
+            <span data-icon="check" data-icon-class="ic ic-sm"></span>
+            کپچا را حل کردم، ادامه بده
+          </button>
+          <button id="agentCancelBtn" class="btn btn-secondary btn-sm">
+            <span data-icon="x" data-icon-class="ic ic-sm"></span>
+            لغو ایجنت
+          </button>
+        </div>
+
+        <!-- جعبه کد تأیید -->
+        <div id="agentOtpBox" class="otp-banner agent-otp hidden">
+          <span>کد تأیید: <strong id="agentOtpCode">---</strong></span>
+          <button id="agentCopyOtpBtn" class="btn btn-success btn-sm">
+            <span data-icon="copy" data-icon-class="ic ic-sm"></span>
+            کپی
+          </button>
+        </div>
+        <div id="agentLinkBox" class="agent-link-box hidden">
+          <div class="agent-link-title"><span data-icon="link" data-icon-class="ic ic-sm"></span> لینک تأیید پیدا شده:</div>
+          <div id="agentLinksList" class="agent-links"></div>
+        </div>
+
+        <!-- لاگ وضعیت -->
+        <div id="agentLog" class="agent-log empty">
+          <div class="agent-log-empty">ایجنت آماده است. صفحه ثبت‌نام سایت را باز کنید و «شروع ایجنت» را بزنید.</div>
+        </div>
+
+        <!-- تنظیمات سولور کپچا -->
+        <details class="agent-solver-box">
+          <summary>
+            <span data-icon="shield-check" data-icon-class="ic ic-sm"></span>
+            حل خودکار کپچا (سرویس سولور)
+          </summary>
+          <div class="agent-solver-body">
+            <select id="agentSolverSelect" class="select-input">
+              <option value="none" selected>خاموش — کپچا را دستی حل می‌کنم</option>
+              <option value="capsolver">CapSolver (فقط برای کپچا نیاز به شارژ دارد)</option>
+              <option value="2captcha">2Captcha (فقط برای کپچا نیاز به شارژ دارد)</option>
+            </select>
+            <input type="password" id="agentSolverKey" class="input" placeholder="API Key سرویس سولور" spellcheck="false" autocomplete="off" />
+            <button id="agentSaveSolverBtn" class="btn btn-secondary btn-sm">
+              <span data-icon="save" data-icon-class="ic ic-sm"></span>
+              ذخیره تنظیمات سولور
+            </button>
+            <div class="agent-hint">
+              پشتیبانی از reCAPTCHA، hCaptcha و Turnstile. کلید سرویس فقط در مرورگر خودتان ذخیره می‌شود.
+              بدون سولور هم ایجنت کار می‌کند؛ فقط کپچا را خودتان تیک می‌زنید.
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <!-- ------------------------------ خزانه حساب‌ها ------------------------------ -->
+      <section id="agentVaultPanel" class="card agent-card hidden">
+        <div class="agent-vault-toolbar">
+          <input type="text" id="agentVaultSearch" class="input input-search" placeholder="جست‌وجو در حساب‌ها (سایت، ایمیل، یوزرنیم)..." />
+        </div>
+        <div id="agentVaultEmpty" class="agent-vault-empty">
+          هنوز حسابی ذخیره نشده است.
+          <div class="agent-hint">هر ثبت‌نامی که ایجنت انجام بدهد خودکار همین‌جا با ایمیل، یوزرنیم و رمز ذخیره می‌شود.</div>
+        </div>
+        <div id="agentVaultList" class="agent-vault-list"></div>
+        <div class="agent-vault-actions">
+          <button id="agentExportBtn" class="btn btn-secondary btn-sm">
+            <span data-icon="download" data-icon-class="ic ic-sm"></span>
+            خروجی JSON همه حساب‌ها
+          </button>
+        </div>
+      </section>
+    </div>
+
     <!-- Edit Account Modal -->
     <div id="editModal" class="modal-backdrop hidden">
       <div class="modal">
@@ -393,5 +557,6 @@
   </div>
 
   <script src="popup.js"></script>
+  <script src="popup-agent.js"></script>
 </body>
 </html>

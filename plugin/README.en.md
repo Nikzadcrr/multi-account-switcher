@@ -2,9 +2,9 @@
 
 # AI Multi-Account Switcher + Instant Temp Mail
 
-**A Chrome/Edge extension (Manifest V3) that keeps 30+ accounts per site and switches between them in one click — with a built-in temp-mail engine that catches verification codes automatically.**
+**A Chrome/Edge extension (Manifest V3) that keeps 30+ accounts per site and switches between them in one click — with a built-in temp-mail engine and an automated registration agent that fills forms, solves captchas and saves every account.**
 
-[![Version](https://img.shields.io/badge/version-4.0.0-6366f1)](#-changelog)
+[![Version](https://img.shields.io/badge/version-5.0.0-6366f1)](#-changelog)
 [![Manifest](https://img.shields.io/badge/Manifest-V3-10b981)](https://developer.chrome.com/docs/extensions/mv3/)
 [![License](https://img.shields.io/badge/license-MIT-f59e0b)](LICENSE)
 
@@ -21,6 +21,8 @@
 Working with several accounts on the same site usually means logging out, logging back in, and sometimes solving captchas — every single time. This extension saves each account's session once, and after that switching is **one click**. You can even open several accounts **at the same time, in separate isolated tabs**.
 
 The second problem is throwaway sign-ups: every new site wants an email, and your real inbox fills up with newsletters. The built-in temp-mail panel creates a disposable address on the spot, keeps the inbox live, and **detects the verification code (OTP) automatically** — copy it with one click or inject it straight into the site's input field.
+
+Version 5 goes one step further with a **Registration Agent**: it finds the sign-up form itself, fills the email, username and password, solves the captcha, submits the form, picks the verification code from the inbox, drops it into the page — and stores the new account in a vault.
 
 > The UI of the extension is in Persian (فارسی). The screenshots show the Persian interface; all mail providers and APIs work internationally.
 
@@ -87,9 +89,29 @@ The second problem is throwaway sign-ups: every new site wants an email, and you
 </table>
 </div>
 
-### 3. Settings & data safety
+### 3. Registration Agent
 
-- **Everything is local** — accounts and mail are stored only in `chrome.storage.local` of your browser profile. There is no middleman server and nothing is uploaded anywhere.
+- **Automatic form detection** — email, username, password, confirm-password fields, the terms checkbox and the submit button are found by scoring type, name, `placeholder` and label text; values are set through the native setter so React/Vue forms register them correctly.
+- **One-click safe credentials** — a random username and a strong password (upper/lowercase + digits + symbols, generated with `crypto.getRandomValues`) are filled in one click; the “I agree to the terms” box is ticked automatically.
+- **Captcha solving** — reCAPTCHA v2/Enterprise, hCaptcha and Cloudflare Turnstile are supported:
+  - without a solver service: the agent does everything else and waits while you tick the captcha manually, then you press “Continue”;
+  - with a solver service (CapSolver or 2Captcha): a token is created through the service API and injected into the widget (filling the response textarea and invoking the site callback).
+- **Automatic form submission** — the submit button is clicked after the captcha is done (can be turned off).
+- **Automatic verification-code pickup** — the mailbox is polled for up to 3 minutes; once the code arrives it appears in the popup and, if a code field is open on the page, it is filled in automatically. Verification links are extracted too and open in a new tab.
+- **Account vault** — every sign-up is stored with site, email, username and password; search, per-field copy, password reveal/hide, delete and a full JSON export.
+
+<div align="center">
+<table>
+<tr>
+<td><img src="screenshots/agent-run.png" alt="Agent panel running with OTP" width="400"></td>
+<td><img src="screenshots/agent-vault.png" alt="Agent account vault" width="400"></td>
+</tr>
+</table>
+</div>
+
+### 4. Settings & data safety
+
+- **Everything is local** — accounts, the agent vault and mail are stored only in `chrome.storage.local` of your browser profile. There is no middleman server and nothing is uploaded anywhere. Your solver API key stays on your machine as well.
 - **Backup & migrate** — export accounts of one site or all sites as JSON and restore them elsewhere.
 - **Behavior toggles** — floating widget, auto session sync, include page storage, desktop notifications.
 
@@ -115,6 +137,9 @@ Log into the site → open the popup → type a name → **Save active account**
 - Click a card = switch in the current tab.
 - The ↗ button on a card = open that account in a **new isolated tab** (next to your current one).
 - **"Open simultaneously in separate tabs"** = batch-open as many accounts as selected in the side menu.
+
+### Automatic sign-up with the Agent
+Open the **Agent** tab → navigate to the site's sign-up page → pick or create a temp mailbox (“New email”) → check the generated username and password → **Start agent**. The agent finds and fills the form; if there is a captcha it either solves it (solver configured) or waits for you and you press “I solved the captcha, continue”. After submission the verification code is picked up automatically and inserted into the page, and the account lands in the vault. For the next account: reopen the sign-up page, press “New email” and “Start agent” again.
 
 ### Create temp mail & get the code
 Open the **Temp Mail** tab → pick a service and domain (or random) → **Create new email** → the address is copied automatically → paste it into the site's form → the inbox updates by itself; copy or inject the code with one click.
@@ -144,11 +169,14 @@ Three moving parts, briefly:
 
 **3. Temp-mail engine.** Each provider has a small client (the Instant Mail app API was reconstructed from the app bundle with its `x-app-key` header and charSwap/base64 encoding; Temp-Mail.io and the Hydra servers use their public endpoints). The popup polls the active mailbox every 5 seconds; a `chrome.alarms` job checks all mailboxes every minute for desktop notifications. Message bodies are scanned with a set of patterns — including Persian/Arabic digit normalization — to find OTP codes and verification links.
 
+**4. Registration agent.** A lightweight content script (`agent-content.js`) is injected on demand into all frames of the tab and scores input fields by type, name, autocomplete, placeholder and label text. Filling uses the native value setter plus `input`/`change` events so modern frameworks notice. Captcha tokens come from CapSolver/2Captcha and are injected into the MAIN world of all frames (filling the response textarea and invoking the callback registered in `___grecaptcha_cfg` for reCAPTCHA, the widget map for hCaptcha, and the hidden field plus `data-callback` for Turnstile). The flow runs in the service worker: even if you close the popup, the agent keeps going until the verification code arrives, and every step is persisted to storage.
+
 ## Screenshots
 
 | | |
 |---|---|
 | ![Accounts view](screenshots/accounts-view.png) | ![Account cards](screenshots/account-cards.png) |
+| ![Agent running](screenshots/agent-run.png) | ![Agent vault](screenshots/agent-vault.png) |
 | ![Quick search](screenshots/quick-search.png) | ![Edit labels](screenshots/edit-labels.png) |
 | ![Temp mail inbox](screenshots/mail-inbox.png) | ![Create mail](screenshots/create-mail.png) |
 | ![Message with OTP](screenshots/message-otp.png) | ![Settings](screenshots/settings.png) |
@@ -170,8 +198,15 @@ Logging out invalidates the session token on the server, so the stored account s
 **How long does a temp address live?**
 Depending on the provider, addresses usually last around 2 days and cannot be recovered. Don't use them for anything important.
 
+**Do I have to configure captcha solving?**
+No. The agent works without a solver: it fills and submits the form and only pauses at the captcha for you to tick it. If you want fully automatic captcha solving, pick a solver service (CapSolver or 2Captcha) in the agent settings and paste its API key; the per-captcha cost goes directly to your own account with that service — the extension never charges anything.
+
+**Does the agent work on every form?**
+Standard HTML forms and modern frameworks work well; multi-step wizards or canvas-based custom controls may need manual filling — the agent honestly reports in its log what it could not find and hands the rest to you.
+
 ## Changelog
 
+- **v5.0.0** — Registration Agent: automatic sign-up form detection and filling (email/username/password/terms), random username and strong password generation, captcha solving via CapSolver/2Captcha (reCAPTCHA, hCaptcha, Turnstile) with a manual fallback, automatic form submission, automatic verification-code pickup and insertion, verification links, and an account vault with search/copy/delete/JSON export wired into the full data backup. New third tab “Agent” in the UI.
 - **v4.0.0** — Removed the personal-Gmail connection feature (OAuth/feed linking and alias addresses on your own Gmail). The temp-mail engine with its five server-side providers is unchanged. Fixed account-card layout with many labels. Cleaned up manifest permissions (`identity` removed).
 - **v3.5 – v3.6** — Various personal-Gmail connection modes (removed in v4).
 - **v3.3** — On-page quick switcher, labels/pinning/sorting, desktop notifications for mail and OTP.

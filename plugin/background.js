@@ -2203,6 +2203,668 @@ chrome.notifications?.onClicked.addListener((notifId) => {
 });
 
 // ----------------------------------------------------------------------------
+// Registration Agent — ایجنت ثبت‌نام خودکار
+// تشخیص فرم، پر کردن فیلدها، حل کپچا، ارسال فرم، دریافت و درج کد تأیید
+// ----------------------------------------------------------------------------
+
+const AGENT_OTP_WAIT_MS = 190000;
+const AGENT_MANUAL_CAPTCHA_TIMEOUT_MS = 300000;
+
+function agentSleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function getAgentSettings() {
+  const data = await chrome.storage.local.get('agentSettings');
+  return {
+    solverProvider: data.agentSettings?.solverProvider || 'none',
+    solverKey: data.agentSettings?.solverKey || '',
+    autoSubmit: data.agentSettings?.autoSubmit !== false,
+    autoSave: data.agentSettings?.autoSave !== false
+  };
+}
+
+async function saveAgentSettings(patch) {
+  const cur = await getAgentSettings();
+  const next = { ...cur, ...(patch || {}) };
+  await chrome.storage.local.set({ agentSettings: next });
+  return next;
+}
+
+async function getAgentAccounts() {
+  const data = await chrome.storage.local.get('agentAccounts');
+  const list = Array.isArray(data.agentAccounts) ? data.agentAccounts : [];
+  return list;
+}
+
+async function saveAgentAccount(entry) {
+  const list = await getAgentAccounts();
+  const acc = {
+    id: `ag_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    hostname: entry.hostname || '',
+    email: entry.email || '',
+    mailboxId: entry.mailboxId || null,
+    username: entry.username || '',
+    password: entry.password || '',
+    note: entry.note || '',
+    otpStatus: entry.otpStatus || 'pending',
+    createdAt: Date.now()
+  };
+  list.push(acc);
+  if (list.length > 2000) list.splice(0, list.length - 2000);
+  await chrome.storage.local.set({ agentAccounts: list });
+  return acc;
+}
+
+function summarizeAgentAccount(a) {
+  return {
+    id: a.id,
+    hostname: a.hostname,
+    email: a.email,
+    username: a.username,
+    password: a.password,
+    note: a.note,
+    otpStatus: a.otpStatus,
+    createdAt: a.createdAt
+  };
+}
+
+function agentStrongPassword(len = 14) {
+  const lower = 'abcdefghijkmnpqrstuvwxyz';
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const digits = '23456789';
+  const symbols = '!@#$%&*?-_';
+  const all = lower + upper + digits + symbols;
+  const rnd = (pool) => {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return pool[buf[0] % pool.length];
+  };
+  const parts = [rnd(lower), rnd(upper), rnd(digits), rnd(symbols)];
+  while (parts.length < Math.max(10, len)) parts.push(rnd(all));
+  // بُر زدن فیشر-یتس
+  for (let i = parts.length - 1; i > 0; i--) {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    const j = buf[0] % (i + 1);
+    [parts[i], parts[j]] = [parts[j], parts[i]];
+  }
+  return parts.join('');
+}
+
+function agentGenUsername() {
+  const name = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  const suffix = Math.random().toString(36).slice(2, 7);
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${name}${suffix}${num}`.replace(/[^a-z0-9]/gi, '');
+}
+
+function agentCaptchaLabel(type) {
+  if (type === 'recaptcha_v2') return 'reCAPTCHA';
+  if (type === 'recaptcha_enterprise') return 'reCAPTCHA Enterprise';
+  if (type === 'hcaptcha') return 'hCaptcha';
+  if (type === 'turnstile') return 'Cloudflare Turnstile';
+  return type || 'کپچا';
+}
+
+// ---------- وضعیت اجرای ایجنت ----------
+
+const agentRuns = new Map(); // tabId -> run
+
+function agentPublicRun(run) {
+  return {
+    tabId: run.tabId,
+    hostname: run.hostname,
+    status: run.status,
+    log: run.log.slice(-25),
+    fields: run.fields || null,
+    captcha: run.captcha || null,
+    otp: run.otp || null,
+    otpFilled: Boolean(run.otpFilled),
+    links: run.links || [],
+    email: run.email || '',
+    username: run.username || '',
+    password: run.password || '',
+    savedAccountId: run.savedAccountId || null,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt || null,
+    error: run.error || null
+  };
+}
+
+async function agentPersistRun(run) {
+  try {
+    const data = await chrome.storage.local.get('agentRuns');
+    const store = Array.isArray(data.agentRuns) ? data.agentRuns : [];
+    const withoutThis = store.filter((r) => r.tabId !== run.tabId);
+    withoutThis.push(agentPublicRun(run));
+    await chrome.storage.local.set({ agentRuns: withoutThis.slice(-12) });
+  } catch {}
+}
+
+function agentEmit(run, patch = {}, logText = null) {
+  if (logText) {
+    run.log.push({ t: Date.now(), text: logText });
+    if (run.log.length > 80) run.log = run.log.slice(-80);
+  }
+  Object.assign(run, patch);
+  agentRuns.set(run.tabId, run);
+  agentPersistRun(run).catch(() => {});
+  try {
+    const p = chrome.runtime.sendMessage({ type: 'AGENT_EVENT', run: agentPublicRun(run) });
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch {}
+}
+
+// ---------- تزریق و ارتباط با اسکریپت محتوایی ----------
+
+async function agentEnsureInjected(tabId) {
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'AGENT_PING' });
+    if (res?.ok) return true;
+  } catch {}
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: ['agent-content.js']
+    });
+    await agentSleep(200);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function agentSendTab(tabId, msg, tries = 2) {
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, msg);
+    } catch {
+      await agentEnsureInjected(tabId);
+      await agentSleep(350);
+    }
+  }
+  return { ok: false, error: 'no_content_script' };
+}
+
+async function agentScanWithRetry(tabId, run) {
+  let last = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (run.status === 'cancelled') return null;
+    await agentEnsureInjected(tabId);
+    last = await agentSendTab(tabId, { type: 'AGENT_SCAN' });
+    if (last?.ok && last.hasFields) return last;
+    if (attempt < 3) {
+      agentEmit(run, {}, `اسکن ${attempt}: فیلد مناسبی پیدا نشد، دوباره تلاش می‌کنم...`);
+      await agentSleep(1800);
+    }
+  }
+  return last;
+}
+
+// ---------- حل کپچا از طریق سرویس سولور ----------
+
+const AGENT_SOLVER_TASKS = {
+  capsolver: {
+    recaptcha_v2: 'AntiReCaptchaV2TaskProxyLess',
+    recaptcha_enterprise: 'AntiReCaptchaEnterpriseTaskProxyLess',
+    hcaptcha: 'AntiHCaptchaTaskProxyLess',
+    turnstile: 'AntiTurnstileTaskProxyLess'
+  },
+  '2captcha': {
+    recaptcha_v2: 'RecaptchaV2TaskProxyless',
+    recaptcha_enterprise: 'RecaptchaEnterpriseTaskProxyless',
+    hcaptcha: 'HCaptchaTaskProxyless',
+    turnstile: 'TurnstileTaskProxyless'
+  }
+};
+
+async function agentSolveCaptcha(provider, key, captcha, pageUrl, run) {
+  const taskType = AGENT_SOLVER_TASKS[provider]?.[captcha.type];
+  if (!taskType) throw new Error('این نوع کپچا در سولور انتخابی پشتیبانی نمی‌شود.');
+  if (!captcha.sitekey) throw new Error('sitekey کپچا در صفحه پیدا نشد.');
+
+  const endpoint = provider === 'capsolver' ? 'https://api.capsolver.com' : 'https://api.2captcha.com';
+  const headers = { 'Content-Type': 'application/json' };
+
+  const created = await fetch(`${endpoint}/createTask`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      clientKey: key,
+      task: {
+        type: taskType,
+        websiteURL: pageUrl,
+        websiteKey: captcha.sitekey
+      }
+    })
+  }).then((r) => r.json());
+
+  if (created.errorId && created.errorId !== 0) {
+    throw new Error(created.errorDescription || created.errorCode || 'خطای سولور');
+  }
+  if (created.status === 'ready' && created.solution) {
+    return created.solution.gRecaptchaResponse || created.solution.token || '';
+  }
+  const taskId = created.taskId;
+  if (!taskId) throw new Error('سولور پاسخ معتبر نداد.');
+
+  for (let i = 0; i < 50; i++) {
+    await agentSleep(3000);
+    if (run.status === 'cancelled') throw new Error('لغو شد');
+    const res = await fetch(`${endpoint}/getTaskResult`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ clientKey: key, taskId })
+    }).then((r) => r.json());
+    if (res.errorId && res.errorId !== 0) {
+      throw new Error(res.errorDescription || res.errorCode || 'خطای سولور');
+    }
+    if (res.status === 'ready') {
+      const token = res.solution?.gRecaptchaResponse || res.solution?.token || '';
+      if (!token) throw new Error('توکن خالی برگشت.');
+      return token;
+    }
+    if (i % 6 === 5) agentEmit(run, {}, `هنوز در حال حل کپچا... (${i * 3} ثانیه)`);
+  }
+  throw new Error('حل کپچا طولانی شد و تایم‌اوت شد.');
+}
+
+async function agentInjectCaptchaToken(tabId, type, token) {
+  try {
+    if (type === 'recaptcha_v2' || type === 'recaptcha_enterprise') {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: 'MAIN',
+        func: (tk) => {
+          const out = { textarea: false, callback: false };
+          const ta =
+            document.getElementById('g-recaptcha-response') ||
+            document.querySelector('textarea[name="g-recaptcha-response"]');
+          if (ta) {
+            ta.value = tk;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            out.textarea = true;
+          }
+          try {
+            const cfg = window.___grecaptcha_cfg;
+            if (cfg && cfg.clients) {
+              for (const id of Object.keys(cfg.clients)) {
+                const seen = new Set();
+                (function visit(obj) {
+                  if (!obj || typeof obj !== 'object' || seen.has(obj)) return;
+                  seen.add(obj);
+                  for (const k in obj) {
+                    try {
+                      const v = obj[k];
+                      if (typeof v === 'function') {
+                        v(tk);
+                        out.callback = true;
+                      } else if (v && typeof v === 'object') {
+                        visit(v);
+                      }
+                    } catch {}
+                  }
+                })(cfg.clients[id]);
+              }
+            }
+          } catch {}
+          return out;
+        },
+        args: [token]
+      });
+      return (results || []).some(
+        (r) => r.result && (r.result.callback || r.result.textarea)
+      );
+    }
+
+    if (type === 'hcaptcha') {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: 'MAIN',
+        func: (tk) => {
+          const out = { textarea: false, callback: false };
+          document
+            .querySelectorAll('textarea[name="h-response"], textarea[name="g-recaptcha-response"]')
+            .forEach((ta) => {
+              ta.value = tk;
+              out.textarea = true;
+            });
+          document
+            .querySelectorAll('input[name="h-captcha-response"], input[name="g-recaptcha-response"]')
+            .forEach((inp) => {
+              inp.value = tk;
+              out.textarea = true;
+            });
+          try {
+            const hc = window.hcaptcha;
+            const map = hc && (hc._widgetMap || (hc.__internal && hc.__internal.widgetMap));
+            if (map) {
+              for (const id of Object.keys(map)) {
+                const w = map[id];
+                const cb =
+                  w?.callback ||
+                  w?.config?.callback ||
+                  w?.params?.callback;
+                if (typeof cb === 'function') {
+                  cb(tk);
+                  out.callback = true;
+                }
+              }
+            }
+          } catch {}
+          return out;
+        },
+        args: [token]
+      });
+      return (results || []).some((r) => r.result && (r.result.callback || r.result.textarea));
+    }
+
+    if (type === 'turnstile') {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        world: 'MAIN',
+        func: (tk) => {
+          const out = { input: false, callback: false };
+          document
+            .querySelectorAll('input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"]')
+            .forEach((el) => {
+              el.value = tk;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              out.input = true;
+            });
+          try {
+            document.querySelectorAll('.cf-turnstile[data-callback]').forEach((el) => {
+              const fnName = el.getAttribute('data-callback');
+              if (fnName && typeof window[fnName] === 'function') {
+                window[fnName](tk);
+                out.callback = true;
+              }
+            });
+          } catch {}
+          return out;
+        },
+        args: [token]
+      });
+      return (results || []).some((r) => r.result && (r.result.input || r.result.callback));
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// ---------- انتظار دستی برای کپچا ----------
+
+function agentWaitManualCaptcha(run) {
+  return new Promise((resolve) => {
+    run._manualResolve = () => {
+      run._manualResolve = null;
+      resolve();
+    };
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      if (run.status === 'cancelled' || Date.now() - t0 > AGENT_MANUAL_CAPTCHA_TIMEOUT_MS) {
+        clearInterval(timer);
+        if (run._manualResolve) {
+          run._manualResolve();
+        }
+      }
+    }, 2000);
+    run._manualTimer = timer;
+  });
+}
+
+// ---------- انتظار ایمیل تأیید ----------
+
+async function agentWaitForOtp(run, mailboxId, baselineIds) {
+  const st = await getMailState();
+  const mb = st.mailboxes.find((m) => m.id === mailboxId);
+  if (!mb) {
+    agentEmit(run, {}, 'صندوق ایمیل انتخاب‌شده پیدا نشد؛ کد را از تب «ایمیل موقت» بگیرید.');
+    return null;
+  }
+  const seen = new Set((baselineIds || []).map(String));
+  const deadline = Date.now() + AGENT_OTP_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    if (run.status === 'cancelled') return null;
+    let messages = [];
+    try {
+      messages = await listMessagesForMailbox(mb);
+    } catch {
+      await agentSleep(6000);
+      continue;
+    }
+    const fresh = messages
+      .filter((m) => !seen.has(String(m.id)))
+      .sort((a, b) => normalizeTimestamp(b.createdAt) - normalizeTimestamp(a.createdAt));
+
+    if (fresh.length) {
+      const summary = fresh[0];
+      seen.add(String(summary.id));
+      let otp = summary.otpCode || null;
+      let links = [];
+      try {
+        const full = await readMessageForMailbox(mb, summary.id);
+        if (!otp && full?.otpCode) otp = full.otpCode;
+        links = Array.isArray(full?.links) ? full.links : [];
+      } catch {}
+      return { otp, links, subject: summary.subject || '', from: summary.fromAddress || '' };
+    }
+    await agentSleep(5000);
+  }
+  return null;
+}
+
+// ---------- اجرای کامل فلو ----------
+
+async function runAgentFlow(tabId, opts) {
+  const run = {
+    tabId,
+    hostname: opts.hostname || '',
+    status: 'running',
+    log: [],
+    fields: null,
+    captcha: null,
+    otp: null,
+    otpFilled: false,
+    links: [],
+    email: opts.email || '',
+    username: opts.username || '',
+    password: opts.password || '',
+    savedAccountId: null,
+    startedAt: Date.now(),
+    finishedAt: null,
+    error: null
+  };
+  agentRuns.set(tabId, run);
+  agentEmit(run, {}, 'ایجنت شروع شد.');
+
+  try {
+    // فاز ۱ — تشخیص فرم
+    agentEmit(run, {}, 'در حال تشخیص فرم ثبت‌نام در صفحه...');
+    const scan = await agentScanWithRetry(tabId, run);
+    if (!scan || run.status === 'cancelled') {
+      if (run.status !== 'cancelled') {
+        agentEmit(run, { status: 'failed', error: 'no_form', finishedAt: Date.now() },
+          'فیلد ایمیل یا رمز عبوری در صفحه پیدا نشد. صفحه را کامل باز کنید و دوباره تلاش کنید.');
+      }
+      return;
+    }
+    run.captcha = scan.captcha || null;
+    run.fields = scan.fields || null;
+
+    const parts = [];
+    if (scan.fields.email) parts.push('ایمیل');
+    if (scan.fields.username) parts.push('نام کاربری');
+    if (scan.fields.password) parts.push('رمز');
+    if (scan.fields.confirm) parts.push('تکرار رمز');
+    agentEmit(
+      run,
+      { fields: scan.fields, captcha: scan.captcha },
+      `فرم شناسایی شد (${parts.join('، ') || 'بدون فیلد اصلی'}).`
+    );
+    if (scan.captcha) {
+      agentEmit(run, {}, `کپچای ${agentCaptchaLabel(scan.captcha.type)} روی صفحه هست.`);
+    }
+
+    // فاز ۲ — پر کردن فیلدها
+    const fill = await agentSendTab(tabId, {
+      type: 'AGENT_FILL',
+      payload: { email: opts.email, username: opts.username, password: opts.password }
+    });
+    if (run.status === 'cancelled') return;
+    if (!fill?.ok) {
+      agentEmit(run, { status: 'failed', error: 'fill_failed', finishedAt: Date.now() },
+        'پر کردن خودکار فرم ناموفق بود. فیلدها را دستی پر کنید یا صفحه را دوباره بارگذاری کنید.');
+      return;
+    }
+    agentEmit(run, {}, `فیلدها پر شد (${(fill.filled || []).join('، ')}).`);
+
+    // فاز ۳ — کپچا
+    if (scan.captcha) {
+      const settings = await getAgentSettings();
+      if (settings.solverProvider !== 'none' && settings.solverKey) {
+        const providerLabel = settings.solverProvider === 'capsolver' ? 'CapSolver' : '2Captcha';
+        agentEmit(run, {}, `در حال حل کپچا با ${providerLabel}...`);
+        try {
+          const token = await agentSolveCaptcha(
+            settings.solverProvider,
+            settings.solverKey,
+            scan.captcha,
+            scan.url,
+            run
+          );
+          const injected = await agentInjectCaptchaToken(tabId, scan.captcha.type, token);
+          if (injected) {
+            agentEmit(run, {}, 'توکن کپچا ساخته و در صفحه تزریق شد.');
+          } else {
+            agentEmit(run, {}, 'توکن کپچا ساخته شد اما تزریق خودکار ممکن نشد؛ اگر سایت آن را نگرفت، کپچا را دستی حل کنید و «ادامه» را بزنید.');
+            await agentWaitManualCaptcha(run);
+          }
+        } catch (e) {
+          agentEmit(run, {}, `حل خودکار کپچا ناموفق بود: ${e?.message || ''}. کپچا را دستی حل کنید و «ادامه» را بزنید.`);
+          await agentWaitManualCaptcha(run);
+        }
+      } else {
+        agentEmit(
+          run,
+          { status: 'waiting_captcha_manual' },
+          'کپچا را در صفحه حل کنید، بعد در پاپ‌آپ دکمه «ادامه» را بزنید.'
+        );
+        await agentWaitManualCaptcha(run);
+        agentEmit(run, { status: 'running' }, 'ادامه...');
+      }
+    }
+    if (run.status === 'cancelled') return;
+
+    // فاز ۴ — ارسال فرم
+    if (opts.autoSubmit) {
+      await agentSleep(800);
+      const sub = await agentSendTab(tabId, { type: 'AGENT_CLICK_SUBMIT' });
+      if (run.status === 'cancelled') return;
+      if (sub?.ok) {
+        agentEmit(run, {}, sub.via === 'click' ? `دکمه «${sub.label || 'ثبت‌نام'}» کلیک شد.` : 'فرم با requestSubmit ارسال شد.');
+      } else {
+        agentEmit(run, {}, 'دکمه ثبت‌نام پیدا نشد؛ خودتان فرم را ارسال کنید — ایجنت برای کد تأیید منتظر می‌ماند.');
+      }
+      await agentSleep(2200);
+    }
+
+    // فاز ۵ — ذخیره در خزانه
+    if (opts.autoSave !== false) {
+      const acc = await saveAgentAccount({
+        hostname: run.hostname,
+        email: run.email,
+        mailboxId: opts.mailboxId || null,
+        username: run.username,
+        password: run.password,
+        note: `ثبت‌نام ایجنت — ${run.hostname}`,
+        otpStatus: 'pending'
+      });
+      run.savedAccountId = acc.id;
+      agentEmit(run, { savedAccountId: acc.id }, 'حساب در خزانه ایجنت ذخیره شد.');
+    }
+
+    // فاز ۶ — انتظار کد تأیید
+    agentEmit(run, { status: 'waiting_otp' }, 'در انتظار ایمیل تأیید (تا ۳ دقیقه)...');
+    const result = await agentWaitForOtp(run, opts.mailboxId, opts.baselineIds);
+    if (run.status === 'cancelled') return;
+
+    if (result) {
+      agentEmit(
+        run,
+        { otp: result.otp, links: result.links || [] },
+        result.otp
+          ? `کد تأیید در ایمیل پیدا شد: ${result.otp}`
+          : `ایمیل «${result.subject}» رسید (کد عددی در متن نبود).`
+      );
+
+      if (result.otp) {
+        let filled = false;
+        for (let i = 0; i < 10 && !filled; i++) {
+          if (run.status === 'cancelled') return;
+          const r = await agentSendTab(tabId, { type: 'AGENT_FILL_OTP', code: result.otp });
+          if (r?.ok) {
+            filled = true;
+          } else {
+            await agentSleep(2500);
+          }
+        }
+        if (filled) {
+          agentEmit(run, { otpFilled: true }, 'کد تأیید در صفحه درج شد.');
+        } else {
+          agentEmit(run, {}, 'فیلد کد تأیید در صفحه پیدا نشد؛ کد در پاپ‌آپ آماده کپی است.');
+        }
+      }
+
+      if ((result.links || []).length) {
+        agentEmit(run, {}, 'لینک تأیید هم در ایمیل هست؛ از بخش «لینک تأیید» در پاپ‌آپ بازش کنید.');
+      }
+
+      try {
+        const list = await getAgentAccounts();
+        const acc = list.find((a) => a.id === run.savedAccountId);
+        if (acc) {
+          acc.otpStatus = result.otp ? 'received' : 'email_only';
+          acc.note = `${acc.note} | ایمیل: ${result.subject}`.slice(0, 120);
+          await chrome.storage.local.set({ agentAccounts: list });
+        }
+      } catch {}
+
+      agentEmit(run, { status: 'done', finishedAt: Date.now() }, 'ایجنت کارش تمام شد.');
+    } else {
+      agentEmit(
+        run,
+        { status: 'done', finishedAt: Date.now(), otpTimeout: true },
+        'تا ۳ دقیقه ایمیل تأیید نرسید. از تب «ایمیل موقت» بعداً چک کنید.'
+      );
+    }
+  } catch (e) {
+    agentEmit(
+      run,
+      { status: 'failed', error: e?.message || 'unknown', finishedAt: Date.now() },
+      `خطا: ${e?.message || 'نامشخص'}`
+    );
+  } finally {
+    if (run._manualTimer) clearInterval(run._manualTimer);
+    run._manualResolve = null;
+  }
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const run = agentRuns.get(tabId);
+  if (run && (run.status === 'running' || run.status === 'waiting_captcha_manual' || run.status === 'waiting_otp')) {
+    run.status = 'cancelled';
+    if (run._manualResolve) run._manualResolve();
+    agentEmit(run, { finishedAt: Date.now() }, 'تب بسته شد؛ ایجنت متوقف شد.');
+  }
+  agentRuns.delete(tabId);
+});
+
+// ----------------------------------------------------------------------------
 // Quick Search — جست‌وجوی سریع اکانت‌ها بین همه سایت‌ها
 // ----------------------------------------------------------------------------
 
@@ -2772,6 +3434,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'EXPORT_DATA': {
           const domains = await getAllDomains();
           const mailState = await getMailState();
+          const agentAccounts = await getAgentAccounts();
           if (msg.scope === 'site' && msg.siteKey) {
             const single = domains[msg.siteKey]
               ? { [msg.siteKey]: domains[msg.siteKey] }
@@ -2783,7 +3446,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 version: 3,
                 exportedAt: new Date().toISOString(),
                 domains: single,
-                mailState
+                mailState,
+                agentAccounts: []
               }
             };
           }
@@ -2794,7 +3458,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               version: 3,
               exportedAt: new Date().toISOString(),
               domains,
-              mailState
+              mailState,
+              agentAccounts
             }
           };
         }
@@ -2848,6 +3513,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             await saveMailState(curMail);
           }
+
+          if (Array.isArray(incoming.agentAccounts)) {
+            const curAgent = await getAgentAccounts();
+            const knownAgentIds = new Set(curAgent.map((a) => a.id));
+            let agentImported = 0;
+            for (const a of incoming.agentAccounts) {
+              if (a && a.id && !knownAgentIds.has(a.id)) {
+                curAgent.push(a);
+                agentImported++;
+              }
+            }
+            await chrome.storage.local.set({ agentAccounts: curAgent });
+          }
+
           const allTabs = await chrome.tabs.query({});
           for (const t of allTabs) {
             if (t.id && t.url) {
@@ -2857,6 +3536,147 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           return { ok: true, importedCount };
+        }
+
+        case 'AGENT_GET_SETTINGS':
+          return { ok: true, settings: await getAgentSettings() };
+
+        case 'AGENT_SAVE_SETTINGS':
+          return { ok: true, settings: await saveAgentSettings(msg.settings || {}) };
+
+        case 'AGENT_GENERATE_CREDS':
+          return { ok: true, password: agentStrongPassword(), username: agentGenUsername() };
+
+        case 'AGENT_START': {
+          const tab = await resolveTargetTab(msg.tabId, sender);
+          if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
+            return { ok: false, error: 'ابتدا صفحه ثبت‌نام سایت مورد نظر را باز کنید.' };
+          }
+          if (!msg.email || !msg.mailboxId) {
+            return { ok: false, error: 'ابتدا ایمیل موقت را انتخاب یا بسازید.' };
+          }
+          const activeRun = agentRuns.get(tab.id);
+          if (activeRun && ['running', 'waiting_captcha_manual', 'waiting_otp'].includes(activeRun.status)) {
+            return { ok: false, error: 'یک ایجنت فعال در همین تب در حال اجراست؛ اول لغوش کنید.' };
+          }
+
+          const baseState = await getMailState();
+          const baseMb = baseState.mailboxes.find((m) => m.id === msg.mailboxId);
+          let baselineIds = [];
+          if (baseMb) {
+            try {
+              const baseMsgs = await listMessagesForMailbox(baseMb);
+              baselineIds = baseMsgs.map((m) => String(m.id));
+            } catch {}
+          }
+
+          let hostname = '';
+          try {
+            hostname = new URL(tab.url).hostname;
+          } catch {}
+
+          runAgentFlow(tab.id, {
+            email: msg.email,
+            mailboxId: msg.mailboxId,
+            username: (msg.username || '').trim() || agentGenUsername(),
+            password: msg.password || agentStrongPassword(),
+            autoSubmit: msg.autoSubmit !== false,
+            autoSave: msg.autoSave !== false,
+            baselineIds,
+            hostname
+          }).catch(() => {});
+
+          return { ok: true, started: true };
+        }
+
+        case 'AGENT_CANCEL': {
+          const run = agentRuns.get(msg.tabId);
+          if (!run) return { ok: true, cancelled: false };
+          run.status = 'cancelled';
+          if (run._manualResolve) run._manualResolve();
+          agentEmit(run, { status: 'cancelled', finishedAt: Date.now() }, 'ایجنت توسط شما لغو شد.');
+          return { ok: true, cancelled: true };
+        }
+
+        case 'AGENT_MANUAL_CONTINUE': {
+          const run = agentRuns.get(msg.tabId);
+          if (!run) return { ok: false, error: 'اجران فعال نیست.' };
+          if (run.status !== 'waiting_captcha_manual') {
+            return { ok: false, error: 'ایجنت در حالت انتظار کپچا نیست.' };
+          }
+          run.status = 'running';
+          if (run._manualResolve) run._manualResolve();
+          return { ok: true };
+        }
+
+        case 'AGENT_GET_RUN_STATE': {
+          const run = agentRuns.get(msg.tabId);
+          if (run) return { ok: true, run: agentPublicRun(run) };
+          if (msg.tabId != null) {
+            const data = await chrome.storage.local.get('agentRuns');
+            const stored = (data.agentRuns || []).find((r) => r.tabId === msg.tabId);
+            if (stored) return { ok: true, run: stored };
+          }
+          return { ok: true, run: null };
+        }
+
+        case 'AGENT_GET_ACCOUNTS': {
+          const list = await getAgentAccounts();
+          const accounts = list
+            .map(summarizeAgentAccount)
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          if (msg.search) {
+            const q = String(msg.search).toLowerCase();
+            const filtered = accounts.filter(
+              (a) =>
+                (a.hostname || '').toLowerCase().includes(q) ||
+                (a.email || '').toLowerCase().includes(q) ||
+                (a.username || '').toLowerCase().includes(q) ||
+                (a.note || '').toLowerCase().includes(q)
+            );
+            return { ok: true, accounts: filtered, total: accounts.length };
+          }
+          return { ok: true, accounts, total: accounts.length };
+        }
+
+        case 'AGENT_DELETE_ACCOUNT': {
+          const list = await getAgentAccounts();
+          const idx = list.findIndex((a) => a.id === msg.accountId);
+          if (idx < 0) return { ok: false, error: 'حساب پیدا نشد.' };
+          list.splice(idx, 1);
+          await chrome.storage.local.set({ agentAccounts: list });
+          return { ok: true, total: list.length };
+        }
+
+        case 'AGENT_CLEAR_ACCOUNTS': {
+          await chrome.storage.local.set({ agentAccounts: [] });
+          return { ok: true };
+        }
+
+        case 'AGENT_UPDATE_ACCOUNT': {
+          const list = await getAgentAccounts();
+          const acc = list.find((a) => a.id === msg.accountId);
+          if (!acc) return { ok: false, error: 'حساب پیدا نشد.' };
+          if (typeof msg.note === 'string') acc.note = msg.note.slice(0, 140);
+          if (typeof msg.password === 'string' && msg.password) acc.password = msg.password;
+          await chrome.storage.local.set({ agentAccounts: list });
+          return { ok: true, account: summarizeAgentAccount(acc) };
+        }
+
+        case 'AGENT_SAVE_ACCOUNT': {
+          if (!msg.email || !msg.hostname) {
+            return { ok: false, error: 'ایمیل یا سایت مشخص نیست.' };
+          }
+          const acc = await saveAgentAccount({
+            hostname: msg.hostname,
+            email: msg.email,
+            mailboxId: msg.mailboxId || null,
+            username: msg.username || '',
+            password: msg.password || '',
+            note: msg.note || '',
+            otpStatus: msg.otpStatus || 'pending'
+          });
+          return { ok: true, account: summarizeAgentAccount(acc) };
         }
 
         default:

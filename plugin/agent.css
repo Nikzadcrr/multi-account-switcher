@@ -1,0 +1,502 @@
+/* ==================================================================
+   Agent — ثبت‌نام خودکار و خزانه حساب‌ها (استایل اختصاصی)
+   ================================================================== */
+
+.agent-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+/* پیل‌های سوییچ */
+.agent-pills {
+  display: flex;
+  gap: 8px;
+}
+.agent-pill {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.agent-pill:hover {
+  background: var(--bg-card-hover);
+  color: var(--text);
+}
+.agent-pill.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(6, 182, 212, 0.18));
+  border-color: rgba(99, 102, 241, 0.55);
+  color: var(--text);
+}
+.agent-pill-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 99px;
+  background: rgba(6, 182, 212, 0.22);
+  color: var(--primary-cyan);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* کارت اصلی */
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+/* ردیف سایت هدف */
+.agent-site-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.agent-site-label {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.agent-site-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 700;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-inline-start: auto;
+}
+.agent-status-chip.run {
+  background: rgba(6, 182, 212, 0.15);
+  color: var(--primary-cyan);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+}
+.agent-status-chip.warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.agent-status-chip.ok {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.agent-status-chip.err {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* فیلدها */
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.agent-mail-row,
+.agent-cred-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.agent-mail-select {
+  flex: 1;
+  min-width: 0;
+}
+.agent-creds-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.agent-pass-input {
+  font-family: "Segoe UI", Tahoma, monospace;
+  letter-spacing: 0.4px;
+}
+.icon-btn-sm {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 10px;
+}
+.icon-btn-sm span {
+  width: 15px;
+  height: 15px;
+}
+.agent-hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+/* چک‌باکس‌ها */
+.agent-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.agent-check-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* دکمه شروع */
+.agent-start-btn {
+  width: 100%;
+  justify-content: center;
+}
+.agent-run-actions {
+  display: flex;
+  gap: 8px;
+}
+.agent-run-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* کد تأیید و لینک‌ها */
+.agent-otp {
+  margin: 0;
+}
+.agent-link-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+.agent-link-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--primary-cyan);
+  font-weight: 700;
+}
+.agent-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-link-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: rgba(148, 163, 184, 0.09);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.agent-link-row .agent-link-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+/* لاگ وضعیت */
+.agent-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 168px;
+  min-height: 52px;
+  overflow-y: auto;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.agent-log.empty {
+  justify-content: center;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.agent-log-line {
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  color: var(--text-muted);
+}
+.agent-log-line .log-time {
+  color: rgba(148, 163, 184, 0.55);
+  font-size: 10.5px;
+  flex-shrink: 0;
+  direction: ltr;
+}
+.agent-log-line.log-info { color: var(--text); }
+.agent-log-line.log-ok { color: var(--success); }
+.agent-log-line.log-warn { color: var(--warning); }
+.agent-log-line.log-err { color: var(--danger); }
+
+/* سولور */
+.agent-solver-box {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.05);
+  overflow: hidden;
+}
+.agent-solver-box summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  list-style: none;
+  user-select: none;
+}
+.agent-solver-box summary::-webkit-details-marker {
+  display: none;
+}
+.agent-solver-box summary::after {
+  content: "";
+  margin-inline-start: auto;
+  width: 7px;
+  height: 7px;
+  border-inline-end: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.agent-solver-box[open] summary::after {
+  transform: rotate(45deg);
+}
+.agent-solver-box[open] summary {
+  color: var(--text);
+}
+.agent-solver-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 4px 12px 12px;
+}
+.agent-solver-body .btn {
+  justify-content: center;
+}
+
+/* خزانه */
+.agent-vault-toolbar {
+  display: flex;
+  gap: 8px;
+}
+.agent-vault-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 26px 12px;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+}
+.agent-vault-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 330px;
+  overflow-y: auto;
+  padding-inline-end: 2px;
+}
+.agent-vault-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px;
+  border-radius: 13px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  transition: border-color 0.15s ease;
+}
+.agent-vault-card:hover {
+  border-color: var(--border-strong);
+}
+.agent-vault-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.agent-vault-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.agent-vault-host {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.agent-vault-hostname {
+  font-weight: 700;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-vault-date {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.agent-vault-del {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.agent-vault-del:hover {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--danger);
+}
+.agent-vault-del.confirm {
+  background: rgba(239, 68, 68, 0.22);
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.5);
+  font-size: 10.5px;
+  font-weight: 700;
+  width: auto;
+  padding: 0 9px;
+}
+.agent-vault-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  background: rgba(2, 6, 23, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.13);
+  font-size: 12px;
+}
+.agent-vault-row .vault-key {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  flex-shrink: 0;
+  min-width: 34px;
+}
+.agent-vault-row .vault-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: ltr;
+  text-align: left;
+}
+.agent-vault-row .vault-value.masked {
+  letter-spacing: 2px;
+}
+.mini-copy-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.mini-copy-btn:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: var(--text);
+}
+.mini-copy-btn span {
+  width: 13px;
+  height: 13px;
+}
+.agent-vault-note {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-vault-actions {
+  display: flex;
+  gap: 8px;
+}
+.agent-vault-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* سه تب ناوبری: فونت کوچک‌تر و بدون شکستن خط */
+.nav-tab {
+  font-size: 12.5px;
+  white-space: nowrap;
+  gap: 5px;
+}
