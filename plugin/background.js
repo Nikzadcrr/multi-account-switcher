@@ -2639,10 +2639,10 @@ async function agentWaitForOtp(run, mailboxId, baselineIds) {
     // هر ۴ دور (~۲۰ ثانیه) یک‌بار چالش اسلایدر تازه را چک کن
     if (++sliderCheckCounter % 4 === 0 && typeof agentDetectSliderPresence === 'function') {
       try {
-        const sliderThere = await agentDetectSliderPresence(tabId);
+        const sliderThere = await agentDetectSliderPresence(run.tabId);
         if (sliderThere) {
           agentEmit(run, {}, 'چالش اسلایدر جدید هنگام ارسال کد ظاهر شد؛ حل خودکار…');
-          const solved = await agentSolveAliyunSlider(tabId, run, 2);
+          const solved = await agentSolveAliyunSlider(run.tabId, run, 2);
           if (solved) {
             agentEmit(run, {}, 'اسلایدر دوم حل شد ✓ — صفحه به‌طور خودکار درخواست کد را تکرار می‌کند.');
           }
