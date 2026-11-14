@@ -1,0 +1,835 @@
+     1→// ============================================================================
+     2→// Agent Chat — مغز گفت‌وگومحور ایجنت (v5.1)
+     3→// چت با کاربر → درک دستور (LLM رایگان + پارسر محلی) → اجرای چنداکانتی
+     4→// روی موتور موجود runAgentFlow + ایمیل موقت + حل کپچا + ذخیرهٔ خزانه
+     5→// ============================================================================
+     6→
+     7→const CHAT_MAX_MSGS = 260;
+     8→const CHAT_BRAIN_TIMEOUT_MS = 14000;
+     9→const CHAT_MIN_BRAIN_GAP_MS = 9000; // جلوگیری از rate-limit پولینیشنز
+    10→const CHAT_SIGNUP_HINTS = [
+    11→  '/auth?action=signup', '/auth?action=sign-up', '/register', '/signup',
+    12→  '/sign-up', '/auth/signup', '/auth/register', '/create-account',
+    13→  '/sign_in', '/auth', '/login', '/account/register'
+    14→];
+    15→
+    16→// پایگاه دانش سایت‌های شناخته‌شده (نام‌های عامیانهٔ فارسی/انگلیسی → مقصد)
+    17→const CHAT_SITE_KB = [
+    18→  { keys: ['qwen', 'کیوِن', 'کوئن', 'چت کیو', 'qwen.ai'], domain: 'chat.qwen.ai', label: 'Qwen', start: 'https://chat.qwen.ai/auth?action=signup' },
+    19→  { keys: ['chatgpt', 'چت جی پی تی', 'چت‌جی‌پی‌تی', 'gpt', 'openai'], domain: 'chatgpt.com', label: 'ChatGPT', start: 'https://auth.openai.com/log-in' },
+    20→  { keys: ['claude', 'کلاد', 'کلود'], domain: 'claude.ai', label: 'Claude', start: 'https://claude.ai/login' },
+    21→  { keys: ['gemini', 'جمنای', 'جمینای'], domain: 'gemini.google.com', label: 'Gemini', start: 'https://accounts.google.com/signup' },
+    22→  { keys: ['grok', 'گراک'], domain: 'grok.com', label: 'Grok', start: 'https://accounts.x.ai/sign-up' },
+    23→  { keys: ['poe', 'پو'], domain: 'poe.com', label: 'Poe', start: 'https://poe.com/login' },
+    24→  { keys: ['perplexity', 'پرپلکسیتی'], domain: 'perplexity.ai', label: 'Perplexity', start: 'https://www.perplexity.ai/signup' },
+    25→  { keys: ['cursor', 'کرسر'], domain: 'cursor.com', label: 'Cursor', start: 'https://authenticator.cursor.app/sign-up' },
+    26→  { keys: ['trae', 'تره'], domain: 'trae.ai', label: 'Trae', start: 'https://www.trae.ai/signup' },
+    27→  { keys: ['cerebras', 'سربراس'], domain: 'cloud.cerebras.ai', label: 'Cerebras', start: 'https://cloud.cerebras.ai/' },
+    28→  { keys: ['trae ide'], domain: 'trae.ai', label: 'Trae', start: 'https://www.trae.ai/signup' },
+    29→  { keys: ['kimi', 'کیمی'], domain: 'kimi.com', label: 'Kimi', start: 'https://www.kimi.com/' },
+    30→  { keys: ['deepseek', 'دیپ سیک', 'دیپسیک'], domain: 'chat.deepseek.com', label: 'DeepSeek', start: 'https://chat.deepseek.com/sign_up' },
+    31→  { keys: ['copilot', 'کوپایلوت'], domain: 'copilot.microsoft.com', label: 'Copilot', start: 'https://login.live.com/' },
+    32→  { keys: ['huggingface', 'هاگینگ فیس', 'هیوگینگ'], domain: 'huggingface.co', label: 'HuggingFace', start: 'https://huggingface.co/join' },
+    33→  { keys: ['github', 'گیت هاب', 'گیت‌هاب'], domain: 'github.com', label: 'GitHub', start: 'https://github.com/signup' }
+    34→];
+    35→
+    36→// ----------------------------------------------------------------------------
+    37→// ذخیره‌سازی چت
+    38→// ----------------------------------------------------------------------------
+    39→
+    40→async function chatGetState() {
+    41→  const data = await chrome.storage.local.get(['agentChatMsgs', 'agentChatJob', 'agentChatSettings']);
+    42→  return {
+    43→    msgs: Array.isArray(data.agentChatMsgs) ? data.agentChatMsgs : [],
+    44→    job: data.agentChatJob || null,
+    45→    settings: Object.assign(
+    46→      {
+    47→        brainProvider: 'pollinations',
+    48→        brainModel: 'openai',
+    49→        groqKey: '',
+    50→        groqModel: 'llama-3.3-70b-versatile',
+    51→        geminiKey: '',
+    52→        geminiModel: 'gemini-2.0-flash',
+    53→        openrouterKey: '',
+    54→        openrouterModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    55→        mailProvider: 'hd',
+    56→        freshMailPerAccount: true
+    57→      },
+    58→      data.agentChatSettings || {}
+    59→    )
+    60→  };
+    61→}
+    62→
+    63→async function chatSaveMsgs(msgs) {
+    64→  await chrome.storage.local.set({ agentChatMsgs: msgs.slice(-CHAT_MAX_MSGS) });
+    65→}
+    66→
+    67→async function chatPush(role, text, extra = {}) {
+    68→  const st = await chatGetState();
+    69→  const msg = {
+    70→    id: `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    71→    role, // user | agent | system
+    72→    text: String(text || ''),
+    73→    ts: Date.now(),
+    74→    ...extra
+    75→  };
+    76→  const msgs = st.msgs.concat([msg]);
+    77→  await chatSaveMsgs(msgs);
+    78→  try {
+    79→    const p = chrome.runtime.sendMessage({ type: 'AGENT_CHAT_EVENT', msg });
+    80→    if (p && typeof p.catch === 'function') p.catch(() => {});
+    81→  } catch {}
+    82→  return msg;
+    83→}
+    84→
+    85→async function chatSetJob(job) {
+    86→  await chrome.storage.local.set({ agentChatJob: job });
+    87→  try {
+    88→    const p = chrome.runtime.sendMessage({ type: 'AGENT_CHAT_JOB', job });
+    89→    if (p && typeof p.catch === 'function') p.catch(() => {});
+    90→  } catch {}
+    91→}
+    92→
+    93→async function chatSaveSettings(patch) {
+    94→  const st = await chatGetState();
+    95→  const next = { ...st.settings, ...(patch || {}) };
+    96→  await chrome.storage.local.set({ agentChatSettings: next });
+    97→  return next;
+    98→}
+    99→
+   100→function chatBroadcastReset() {
+   101→  try {
+   102→    const p = chrome.runtime.sendMessage({ type: 'AGENT_CHAT_RESET' });
+   103→    if (p && typeof p.catch === 'function') p.catch(() => {});
+   104→  } catch {}
+   105→}
+   106→
+   107→// ----------------------------------------------------------------------------
+   108→// مغز ایجنت — LLM رایگان + پارسر محلی
+   109→// ----------------------------------------------------------------------------
+   110→
+   111→const CHAT_SYSTEM_PROMPT = `تو «مغز» یک ایجنت ثبت‌نام خودکار داخل افزونهٔ کروم هستی.
+   112→کاربر به فارسی یا انگلیسی درخواست می‌دهد تا در سایتی اکانت بسازی (با ایمیل موقت).
+   113→تو خودت ثبت‌نام انجام نمی‌دهی؛ فقط باید یک JSON دقیق برگردانی تا موتور اجرا کند.
+   114→
+   115→قالب پاسخ — فقط و فقط JSON، بدون هیچ متن اضافه، بدون markdown:
+   116→{"intent":"register|status|cancel|help|talk","site":"دامنه یا خالی","count":عدد,"freshMail":true|false,"reply":"جواب کوتاه دوستانه به فارسی"}
+   117→
+   118→قوانین:
+   119→- intent=register وقتی کاربر می‌خواهد اکانت ساخته شود. site را از درخواست استخراج کن (مثل chat.qwen.ai، qwen، github، chatgpt...). اگر سایت نامشخص است site خالی و در reply بپرس.
+   120→- count پیش‌فرض ۱ است؛ «۲ تا/دوتا/two» یعنی ۲ (بین ۱ تا ۲۰).
+   121→- freshMail=true یعنی برای هر اکانت یک ایمیل موقت تازه بساز (پیش‌فرض true).
+   122→- intent=status: کاربر وضعیت/پیشرفت می‌خواهد. intent=cancel: توقف کار. intent=help: آموزش کوتاه. intent=talk: هر چیز دیگر.
+   123→- reply همیشه فارسی، کوتاه، صمیمی و بدون ادعای انجام کار در آینده‌ی دور.
+   124→- هیچ متن بیرون از JSON ننویس.`;
+   125→
+   126→let chatLastBrainAt = 0;
+   127→let chatJobActive = false;
+   128→
+   129→function chatExtractJson(text) {
+   130→  if (!text) return null;
+   131→  let s = String(text).trim();
+   132→  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+   133→  if (fence) s = fence[1].trim();
+   134→  const start = s.indexOf('{');
+   135→  const end = s.lastIndexOf('}');
+   136→  if (start >= 0 && end > start) s = s.slice(start, end + 1);
+   137→  try {
+   138→    return JSON.parse(s);
+   139→  } catch {
+   140→    return null;
+   141→  }
+   142→}
+   143→
+   144→async function chatBrainCall(userText, contextLines) {
+   145→  const st = await chatGetState();
+   146→  const s = st.settings;
+   147→  const sys = CHAT_SYSTEM_PROMPT + '\n\nوضعیت فعلی:\n' + contextLines.join('\n');
+   148→  const history = st.msgs.slice(-10).map((m) => ({
+   149→    role: m.role === 'user' ? 'user' : 'assistant',
+   150→    content: String(m.text || '').slice(0, 600)
+   151→  }));
+   152→
+   153→  // فاصلهٔ حداقلی برای پولینیشنز
+   154→  const waitMs = chatLastBrainAt + CHAT_MIN_BRAIN_GAP_MS - Date.now();
+   155→  if (s.brainProvider === 'pollinations' && waitMs > 0) {
+   156→    await agentSleep(Math.min(waitMs, 20000));
+   157→  }
+   158→  chatLastBrainAt = Date.now();
+   159→
+   160→  const controller = new AbortController();
+   161→  const timer = setTimeout(() => controller.abort(), CHAT_BRAIN_TIMEOUT_MS);
+   162→  try {
+   163→    let text = '';
+   164→    if (s.brainProvider === 'groq' && s.groqKey) {
+   165→      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+   166→        method: 'POST',
+   167→        signal: controller.signal,
+   168→        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.groqKey}` },
+   169→        body: JSON.stringify({
+   170→          model: s.groqModel || 'llama-3.3-70b-versatile',
+   171→          temperature: 0.2,
+   172→          max_tokens: 400,
+   173→          messages: [{ role: 'system', content: sys }, ...history]
+   174→        })
+   175→      });
+   176→      const j = await res.json();
+   177→      text = j?.choices?.[0]?.message?.content || '';
+   178→    } else if (s.brainProvider === 'gemini' && s.geminiKey) {
+   179→      const res = await fetch(
+   180→        `https://generativelanguage.googleapis.com/v1beta/models/${s.geminiModel || 'gemini-2.0-flash'}:generateContent?key=${s.geminiKey}`,
+   181→        {
+   182→          method: 'POST',
+   183→          signal: controller.signal,
+   184→          headers: { 'Content-Type': 'application/json' },
+   185→          body: JSON.stringify({
+   186→            systemInstruction: { parts: [{ text: sys }] },
+   187→            contents: history.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+   188→            generationConfig: { temperature: 0.2, maxOutputTokens: 400 }
+   189→          })
+   190→        }
+   191→      );
+   192→      const j = await res.json();
+   193→      text = j?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
+   194→    } else if (s.brainProvider === 'openrouter' && s.openrouterKey) {
+   195→      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+   196→        method: 'POST',
+   197→        signal: controller.signal,
+   198→        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.openrouterKey}` },
+   199→        body: JSON.stringify({
+   200→          model: s.openrouterModel || 'meta-llama/llama-3.3-70b-instruct:free',
+   201→          max_tokens: 400,
+   202→          messages: [{ role: 'system', content: sys }, ...history]
+   203→        })
+   204→      });
+   205→      const j = await res.json();
+   206→      text = j?.choices?.[0]?.message?.content || '';
+   207→    } else {
+   208→      // پیش‌فرض: Pollinations — رایگان و بدون کلید
+   209→      const res = await fetch('https://text.pollinations.ai/', {
+   210→        method: 'POST',
+   211→        signal: controller.signal,
+   212→        headers: { 'Content-Type': 'application/json' },
+   213→        body: JSON.stringify({
+   214→          model: s.brainModel || 'openai',
+   215→          messages: [{ role: 'system', content: sys }, ...history]
+   216→        })
+   217→      });
+   218→      text = await res.text();
+   219→    }
+   220→    clearTimeout(timer);
+   221→    return { raw: text, json: chatExtractJson(text) };
+   222→  } catch (e) {
+   223→    clearTimeout(timer);
+   224→    return { raw: '', json: null, error: e?.message || 'brain_error' };
+   225→  }
+   226→}
+   227→
+   228→function chatLocalParse(userText) {
+   229→  const t = String(userText || '').toLowerCase().trim();
+   230→  const out = { intent: 'talk', site: '', count: 1, freshMail: true, reply: '', _local: true };
+   231→
+   232→  if (/(لغو|نگه|متوقف|stop|cancel|بس کن)/.test(t)) {
+   233→    out.intent = 'cancel';
+   234→    return out;
+   235→  }
+   236→  if (/(وضعیت|چقدر مونده|status|progress|کجا رسید)/.test(t)) {
+   237→    out.intent = 'status';
+   238→    return out;
+   239→  }
+   240→  if (/(کمک|راهنما|چطوری|help|چطور کار)/.test(t)) {
+   241→    out.intent = 'help';
+   242→    return out;
+   243→  }
+   244→
+   245→  // تشخیص قصد ثبت‌نام: «بساز/ثبت‌نام/اکانت/reg»
+   246→  const wantsRegister = /(بساز|ثبت[‌‌ ]?نام|اکانت[‌‌ ]?(بساز|بگیر)|ساخت اکانت|reg(ister)?|account|signup|sign up)/.test(t);
+   247→
+   248→  // سایت: KB + دامنهٔ صریح
+   249→  let site = '';
+   250→  for (const item of CHAT_SITE_KB) {
+   251→    if (item.keys.some((k) => t.includes(k))) {
+   252→      site = item.domain;
+   253→      break;
+   254→    }
+   255→  }
+   256→  if (!site) {
+   257→    const url = t.match(/([a-z0-9-]+\.(?:com|ai|io|net|org|app|dev|co|me)[a-z0-9./-]*)/i);
+   258→    if (url) site = url[1].replace(/\/+$/, '');
+   259→  }
+   260→
+   261→  // تعداد
+   262→  let count = 1;
+   263→  const numMap = { یک: 1, دو: 2, دوتا: 2, سه: 3, سه‌تا: 3, چهار: 4, پنج: 5, شش: 6, هفت: 7, هشت: 8, نه: 9, ده: 10 };
+   264→  const m2 = t.match(/(\d+)\s*(تا|عدد|اکانت|account)?/);
+   265→  const m3 = t.match(/([\u06F0-\u06F9]{1,2})/);
+   266→  if (m2 && parseInt(m2[1], 10) > 0) count = Math.min(20, parseInt(m2[1], 10));
+   267→  else if (m3) {
+   268→    const fa = m3[1].replace(/[\u06F0-\u06F9]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+   269→    const v = parseInt(fa, 10);
+   270→    if (v > 0) count = Math.min(20, v);
+   271→  } else {
+   272→    for (const [w, v] of Object.entries(numMap)) {
+   273→      if (new RegExp(`${w}(\\s*(تا|عدد|اکانت|account))`).test(t)) {
+   274→        count = v;
+   275→        break;
+   276→      }
+   277→    }
+   278→  }
+   279→
+   280→  if (wantsRegister || site) out.intent = 'register';
+   281→  out.site = site;
+   282→  out.count = count;
+   283→  return out;
+   284→}
+   285→
+   286→async function chatBuildContextLines() {
+   287→  const lines = [];
+   288→  try {
+   289→    const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+   290→    lines.push(`- تب‌های باز: ${tabs.length}`);
+   291→    const cur = tabs.find((t) => t.active) || tabs[0];
+   292→    if (cur?.url) lines.push(`- تب فعال: ${cur.url.slice(0, 120)}`);
+   293→  } catch {}
+   294→  const accs = await getAgentAccounts();
+   295→  lines.push(`- حساب‌های ذخیره‌شدهٔ خزانه: ${accs.length}`);
+   296→  const st = await chatGetState();
+   297→  if (st.job) {
+   298→    lines.push(`- کار فعال: ${st.job.siteLabel || st.job.site || '?'} — پیشرفت ${st.job.done}/${st.job.count}`);
+   299→  }
+   300→  return lines;
+   301→}
+   302→
+   303→// ----------------------------------------------------------------------------
+   304→// حل‌کنندهٔ سایت و تب
+   305→// ----------------------------------------------------------------------------
+   306→
+   307→function chatFindKB(text) {
+   308→  const t = String(text || '').toLowerCase();
+   309→  for (const item of CHAT_SITE_KB) {
+   310→    if (item.keys.some((k) => t.includes(k))) return item;
+   311→  }
+   312→  return null;
+   313→}
+   314→
+   315→function chatNormalizeSite(site) {
+   316→  let s = String(site || '').trim().toLowerCase();
+   317→  if (!s) return null;
+   318→  s = s.replace(/^https?:\/\//, '').replace(/^www\./, '').split(/[/?#]/)[0];
+   319→  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(s)) return null;
+   320→  return s;
+   321→}
+   322→
+   323→// نام‌های عامیانه (qwen، chatgpt...) را به دامنه تبدیل می‌کند
+   324→function chatResolveSite(site) {
+   325→  const n = chatNormalizeSite(site);
+   326→  if (n) return n;
+   327→  const kb = chatFindKB(site);
+   328→  if (kb) return kb.domain;
+   329→  return null;
+   330→}
+   331→
+   332→async function chatFindSiteTab(domain) {
+   333→  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+   334→  return (
+   335→    tabs.find((t) => {
+   336→      try {
+   337→        return new URL(t.url).hostname.replace(/^www\./, '') === domain;
+   338→      } catch {
+   339→        return false;
+   340→      }
+   341→    }) || null
+   342→  );
+   343→}
+   344→
+   345→async function chatWaitTabComplete(tabId, timeoutMs = 20000) {
+   346→  const t0 = Date.now();
+   347→  while (Date.now() - t0 < timeoutMs) {
+   348→    try {
+   349→      const tab = await chrome.tabs.get(tabId);
+   350→      if (tab.status === 'complete') return tab;
+   351→    } catch {
+   352→      return null;
+   353→    }
+   354→    await agentSleep(500);
+   355→  }
+   356→  try {
+   357→    return await chrome.tabs.get(tabId);
+   358→  } catch {
+   359→    return null;
+   360→  }
+   361→}
+   362→
+   363→async function chatScanForForm(tabId) {
+   364→  await agentEnsureInjected(tabId);
+   365→  return agentSendTab(tabId, { type: 'AGENT_SCAN' });
+   366→}
+   367→
+   368→async function chatEnsureSignupPage(tabId, run, domain, startUrl) {
+   369→  // اگر تب روی دامنه است، از همان صفحه شروع کن؛ وگرنه مقصد را باز کن
+   370→  let tab = await chrome.tabs.get(tabId).catch(() => null);
+   371→  let onDomain = false;
+   372→  try {
+   373→    onDomain = tab && new URL(tab.url).hostname.replace(/^www\./, '') === domain;
+   374→  } catch {}
+   375→
+   376→  const candidates = [];
+   377→  if (startUrl) candidates.push(startUrl);
+   378→  if (onDomain && tab.url && !candidates.includes(tab.url)) candidates.unshift(tab.url);
+   379→  if (domain && !candidates.some((u) => u.startsWith('https://'))) {
+   380→    candidates.push(`https://${domain}/`);
+   381→  }
+   382→  for (const h of CHAT_SIGNUP_HINTS) candidates.push(`https://${domain}${h}`);
+   383→
+   384→  for (let i = 0; i < Math.min(candidates.length, 7); i++) {
+   385→    if (run.cancelled) return null;
+   386→    const url = candidates[i];
+   387→    if (!onDomain || i > 0) {
+   388→      chatPush('system', `رفتن به ${url}`);
+   389→      try {
+   390→        await chrome.tabs.update(tabId, { url });
+   391→      } catch {
+   392→        return null;
+   393→      }
+   394→      tab = await chatWaitTabComplete(tabId, 22000);
+   395→      if (!tab) return null;
+   396→      onDomain = true;
+   397→    }
+   398→    await agentSleep(700);
+   399→    const scan = await chatScanForForm(tabId);
+   400→    if (scan?.ok && scan.hasFields) {
+   401→      return { ok: true, scan, url: tab.url };
+   402→    }
+   403→  }
+   404→  return null;
+   405→}
+   406→
+   407→// ----------------------------------------------------------------------------
+   408→// حل‌کنندهٔ اسلایدر (پیاده‌سازی در agent-slider.js) و کپچا (agent-captcha.js)
+   409→// اینجا فقط wrapper امن
+   410→// ----------------------------------------------------------------------------
+   411→
+   412→async function chatTrySlider(run, tabId) {
+   413→  try {
+   414→    if (typeof agentSolveAliyunSlider !== 'function') return false;
+   415→    return await agentSolveAliyunSlider(tabId, run);
+   416→  } catch (e) {
+   417→    chatPush('system', `حل اسلایدر خطا داد: ${e?.message || 'نامشخص'}`);
+   418→    return false;
+   419→  }
+   420→}
+   421→
+   422→// ----------------------------------------------------------------------------
+   423→// دور زدن چالش WAF پس از submit (اسلایدر علی‌بابا)
+   424→// ----------------------------------------------------------------------------
+   425→
+   426→async function chatPostSubmitChallenge(run, tabId) {
+   427→  try {
+   428→    const found = typeof agentDetectSliderPresence === 'function' ? await agentDetectSliderPresence(tabId) : false;
+   429→    if (!found) return false;
+   430→    chatPush('system', 'چالش اسلایدر شناسایی شد؛ در حال حل خودکار…');
+   431→    const solved = await chatTrySlider(run, tabId);
+   432→    if (solved) {
+   433→      chatPush('system', 'اسلایدر حل شد ✓ — دوباره فرم ارسال می‌شود.');
+   434→      await agentSleep(1200);
+   435→      // اگر صفحهٔ چالش مستقل بود، بعد از حل برمی‌گردد؛ فرم را دوباره پر و بفرست
+   436→      try {
+   437→        await agentSendTab(tabId, { type: 'AGENT_CLICK_SUBMIT' });
+   438→      } catch {}
+   439→      return true;
+   440→    }
+   441→    chatPush('system', 'حل خودکار اسلایدر کامل نشد؛ یک بار دستی حل کن و «ادامه» را نزن — خودم چک می‌کنم.');
+   442→    return false;
+   443→  } catch {
+   444→    return false;
+   445→  }
+   446→}
+   447→
+   448→// ----------------------------------------------------------------------------
+   449→// اجرای یک اکانت (wrap روی runAgentFlow)
+   450→// ----------------------------------------------------------------------------
+   451→
+   452→function chatWaitRun(tabId, timeoutMs = 420000) {
+   453→  return new Promise((resolve) => {
+   454→    const t0 = Date.now();
+   455→    const timer = setInterval(async () => {
+   456→      const run = typeof agentRuns !== 'undefined' ? agentRuns.get(tabId) : null;
+   457→      if (!run) {
+   458→        clearInterval(timer);
+   459→        return resolve({ status: 'failed', error: 'run_missing' });
+   460→      }
+   461→      if (['done', 'failed', 'cancelled'].includes(run.status)) {
+   462→        clearInterval(timer);
+   463→        return resolve({ status: run.status, run });
+   464→      }
+   465→      if (Date.now() - t0 > timeoutMs) {
+   466→        clearInterval(timer);
+   467→        run.status = 'cancelled';
+   468→        return resolve({ status: 'timeout', run });
+   469→      }
+   470→    }, 900);
+   471→  });
+   472→}
+   473→
+   474→async function chatRegisterOneAccount(job, index) {
+   475→  const domain = chatResolveSite(job.site) || chatNormalizeSite(job.site);
+   476→  if (!domain) {
+   477→    await chatPush('agent', 'دامنهٔ سایت معتبر نیست. مثل «chat.qwen.ai» بنویس.');
+   478→    return { ok: false, error: 'bad_site' };
+   479→  }
+   480→
+   481→  const kb = chatFindKB(job.site) || null;
+   482→  await chatPush('system', `— اکانت ${index}/${job.count}: ${kb?.label || domain}`);
+   483→
+   484→  // ۱) تب مقصد
+   485→  let tab = await chatFindSiteTab(domain);
+   486→  if (!tab) {
+   487→    tab = await chrome.tabs
+   488→      .create({ url: kb?.start || `https://${domain}/`, active: false })
+   489→      .then((t) => chrome.tabs.get(t.id))
+   490→      .catch(() => null);
+   491→  }
+   492→  if (!tab?.id) {
+   493→    await chatPush('agent', 'تب سایت باز نشد.');
+   494→    return { ok: false, error: 'no_tab' };
+   495→  }
+   496→  await chatWaitTabComplete(tab.id, 20000);
+   497→  await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+   498→
+   499→  // ۲) پیدا کردن فرم ثبت‌نام
+   500→  const found = await chatEnsureSignupPage(tab.id, job, domain, kb?.start);
+   501→  if (!found) {
+   502→    await chatPush(
+   503→      'agent',
+   504→      `فرم ثبت‌نام در ${kb?.label || domain} پیدا نشد. یک بار دستی صفحهٔ ثبت‌نام را باز کن و بگو «ادامه بده» — یا آدرس دقیق صفحه را بفرست.`
+   505→    );
+   506→    job.awaitingUrlHint = true;
+   507→    await chatSetJob(job);
+   508→    return { ok: false, error: 'no_form', needsHint: true };
+   509→  }
+   510→
+   511→  // ۳) ایمیل موقت تازه برای هر اکانت
+   512→  let mailbox = null;
+   513→  const mailState = await getMailState();
+   514→  if (job.freshMail === false && mailState.activeMailboxId) {
+   515→    mailbox = mailState.mailboxes.find((m) => m.id === mailState.activeMailboxId) || null;
+   516→  }
+   517→  if (!mailbox) {
+   518→    try {
+   519→      mailbox = await createTempMailbox(job.mailProvider || 'hd');
+   520→      await chatPush('system', `ایمیل موقت ساخته شد: ${mailbox.email}`);
+   521→    } catch (e) {
+   522→      await chatPush('agent', `ساخت ایمیل موقت شکست خورد: ${e?.message || '?'}`);
+   523→      return { ok: false, error: 'mail_fail' };
+   524→    }
+   525→  }
+   526→
+   527→  // baseline برای تشخیص ایمیل تازه
+   528→  let baselineIds = [];
+   529→  try {
+   530→    const baseMsgs = await listMessagesForMailbox(mailbox);
+   531→    baselineIds = (baseMsgs || []).map((m) => String(m.id));
+   532→  } catch {}
+   533→
+   534→  // ۴) اجرای فلو اصلی
+   535→  const hostname = domain;
+   536→  await runAgentFlow(tab.id, {
+   537→    email: mailbox.email,
+   538→    mailboxId: mailbox.id,
+   539→    username: agentGenUsername(),
+   540→    password: agentStrongPassword(),
+   541→    autoSubmit: true,
+   542→    autoSave: true,
+   543→    baselineIds,
+   544→    hostname,
+   545→    _chatJob: job.id
+   546→  });
+   547→
+   548→  const result = await chatWaitRun(tab.id);
+   549→
+   550→  // ۵) پس از submit: چالش اسلایدر را چک و حل کن و دوباره فرم بفرست
+   551→  if (result.status === 'running' || result.status === 'waiting_otp' || result.status === 'done') {
+   552→    await chatPostSubmitChallenge(result.run || { cancelled: false }, tab.id);
+   553→  }
+   554→
+   555→  const finalRun = (typeof agentRuns !== 'undefined' ? agentRuns.get(tab.id) : null) || result.run || {};
+   556→  const ok = finalRun.status === 'done' && (finalRun.savedAccountId || finalRun.otpFilled || finalRun.otp);
+   557→  return {
+   558→    ok,
+   559→    status: finalRun.status,
+   560→    email: finalRun.email,
+   561→    password: finalRun.password,
+   562→    savedAccountId: finalRun.savedAccountId || null,
+   563→    otp: finalRun.otp || null,
+   564→    error: finalRun.error || null
+   565→  };
+   566→}
+   567→
+   568→// ----------------------------------------------------------------------------
+   569→// کار اصلی چنداکانتی
+   570→// ----------------------------------------------------------------------------
+   571→
+   572→async function chatStartJob(plan) {
+   573→  if (chatJobActive) {
+   574→    await chatPush('agent', 'یک کار فعال در جریان است؛ اول با «لغو کن» تمامش کن.');
+   575→    return { ok: false, error: 'busy' };
+   576→  }
+   577→  const domain = chatResolveSite(plan.site);
+   578→  if (!domain) {
+   579→    await chatPush('agent', 'سایت را دقیق‌تر بگو — مثلاً: «۲ تا اکانت qwen بساز» یا آدرس کامل بده.');
+   580→    return { ok: false, error: 'no_site' };
+   581→  }
+   582→
+   583→  const kb = chatFindKB(domain) || { domain, label: domain, start: null };
+   584→  const job = {
+   585→    id: `job_${Date.now()}`,
+   586→    site: domain,
+   587→    siteLabel: kb.label,
+   588→    startUrl: kb.start,
+   589→    count: Math.max(1, Math.min(20, plan.count || 1)),
+   590→    done: 0,
+   591→    failed: 0,
+   592→    attempts: {},
+   593→    freshMail: plan.freshMail !== false,
+   594→    mailProvider: plan.mailProvider || (await chatGetState()).settings.mailProvider || 'hd',
+   595→    cancelled: false,
+   596→    startedAt: Date.now(),
+   597→    results: []
+   598→  };
+   599→  chatJobActive = true;
+   600→  await chatSetJob(job);
+   601→  await chatPush(
+   602→    'agent',
+   603→    `باشه! شروع می‌کنم: ${job.count} اکانت روی ${kb.label} با ایمیل موقت. هر مرحله را همین‌جا می‌گویم. 🚀`
+   604→  );
+   605→
+   606→  runChatJob(job).finally(() => {
+   607→    chatJobActive = false;
+   608→  });
+   609→  return { ok: true };
+   610→}
+   611→
+   612→async function runChatJob(job) {
+   613→  try {
+   614→    for (let i = job.done + job.failed + 1; i <= job.count && !job.cancelled; i++) {
+   615→      let attempt = 0;
+   616→      let result = null;
+   617→      while (attempt < 3 && !job.cancelled) {
+   618→        attempt++;
+   619→        job.attempts[i] = attempt;
+   620→        await chatSetJob(job);
+   621→        result = await chatRegisterOneAccount(job, i);
+   622→        if (result.ok) break;
+   623→        if (result.needsHint) {
+   624→          // منتظر راهنمای URL از کاربر — حلقهٔ بیرونی هم باید بایستد
+   625→          job.pausedForHint = i;
+   626→          await chatSetJob(job);
+   627→          await chatPush('system', 'کار متوقف شد تا آدرس دقیق صفحهٔ ثبت‌نام را بدهی. بنویس: «ادامه بده <آدرس>»');
+   628→          return;
+   629→        }
+   630→        if (attempt < 3) {
+   631→          await chatPush('system', `تلاش ${attempt} ناموفق بود؛ با ایمیل تازه دوباره…`);
+   632→          await agentSleep(2500);
+   633→        }
+   634→      }
+   635→      if (job.cancelled) break;
+   636→
+   637→      if (result && result.ok) {
+   638→        job.done++;
+   639→        job.results.push({ index: i, ok: true, email: result.email, password: result.password, otp: result.otp });
+   640→        await chatPush('agent', `✅ اکانت ${i} ساخته شد: ${result.email} — رمز در خزانه ذخیره شد.`);
+   641→        if (result.otp) await chatPush('system', `کد تأیید: ${result.otp}`);
+   642→      } else {
+   643→        job.failed++;
+   644→        job.results.push({ index: i, ok: false, error: result?.error || 'unknown' });
+   645→        await chatPush('agent', `❌ اکانت ${i} بعد از ۳ تلاش نشد${result?.error ? ` (${result.error})` : ''}. بقیه را ادامه می‌دهم.`);
+   646→      }
+   647→      await chatSetJob(job);
+   648→      await agentSleep(1800);
+   649→    }
+   650→
+   651→    const totalOk = job.done;
+   652→    if (job.cancelled) {
+   653→      await chatPush('agent', `کار لغو شد. تا اینجا: ${totalOk} موفق از ${job.done + job.failed} اجرا.`);
+   654→    } else if (job.done + job.failed >= job.count) {
+   655→      const summary = job.results
+   656→        .filter((r) => r.ok)
+   657→        .map((r) => `• ${r.email}${r.otp ? ` (کد: ${r.otp})` : ''}`)
+   658→        .join('\n');
+   659→      await chatPush(
+   660→        'agent',
+   661→        summary
+   662→          ? `تمام شد! ${totalOk}/${job.count} اکانت ساخته و در خزانه ذخیره شد:\n${summary}`
+   663→          : `متأسفانه هیچ‌کدام از ${job.count} اکانت ساخته نشد. می‌خوای دوباره امتحان کنیم؟`
+   664→      );
+   665→    }
+   666→    job.finishedAt = Date.now();
+   667→    await chatSetJob(job);
+   668→  } catch (e) {
+   669→    await chatPush('agent', `خطای غیرمنتظره: ${e?.message || e}`);
+   670→    job.finishedAt = Date.now();
+   671→    await chatSetJob(job);
+   672→  }
+   673→}
+   674→
+   675→// ----------------------------------------------------------------------------
+   676→// پردازش پیام کاربر
+   677→// ----------------------------------------------------------------------------
+   678→
+   679→async function agentChatSend(userText, forceUrlHint) {
+   680→  const text = String(userText || '').trim();
+   681→  if (!text) return { ok: false, error: 'empty' };
+   682→  await chatPush('user', text);
+   683→
+   684→  const st = await chatGetState();
+   685→
+   686→  // حالت انتظار آدرس دقیق صفحهٔ ثبت‌نام
+   687→  if (st.job?.pausedForHint || forceUrlHint) {
+   688→    const url = text.match(/https?:\/\/[^\s]+/);
+   689→    if (/ادامه|برو|همین|اینو|این\b/.test(text.toLowerCase()) || url) {
+   690→      const job = st.job;
+   691→      const hintUrl = url ? url[0] : null;
+   692→      if (hintUrl) {
+   693→        job.startUrl = hintUrl;
+   694→        job.site = chatNormalizeSite(new URL(hintUrl).hostname) || job.site;
+   695→        chatFindKB(job.site) && (job.siteLabel = chatFindKB(job.site).label);
+   696→      }
+   697→      const pausedIndex = job.pausedForHint || (job.done + job.failed + 1);
+   698→      job.pausedForHint = null;
+   699→      await chatSetJob(job);
+   700→      chatJobActive = true;
+   701→      runChatJob(job, { resumeIndex: pausedIndex, startUrl: hintUrl }).finally(() => {
+   702→        chatJobActive = false;
+   703→      });
+   704→      await chatPush('agent', 'برگشتم سر کار! ادامه می‌دهم…');
+   705→      return { ok: true };
+   706→    }
+   707→  }
+   708→
+   709→  const ctx = await chatBuildContextLines();
+   710→  let plan = null;
+   711→  try {
+   712→    const brain = await chatBrainCall(text, ctx);
+   713→    if (brain.json && brain.json.intent) plan = brain.json;
+   714→    else if (brain.raw && brain.raw.length > 4) {
+   715→      // LLM جواب داده ولی JSON نبود → برای register دوباره محلی پارس می‌کنیم
+   716→      plan = chatLocalParse(text);
+   717→      if (plan.intent === 'talk') {
+   718→        await chatPush('agent', String(brain.raw).slice(0, 500));
+   719→        return { ok: true };
+   720→      }
+   721→    }
+   722→  } catch {}
+   723→
+   724→  if (!plan) plan = chatLocalParse(text);
+   725→
+   726→  switch (plan.intent) {
+   727→    case 'register': {
+   728→      // اگر مغز سایت را نداد، از پارسر محلی کمک بگیر
+   729→      if (!plan.site) {
+   730→        const lp = chatLocalParse(text);
+   731→        if (lp.site) {
+   732→          plan.site = lp.site;
+   733→          if (!plan.count || plan.count < 1) plan.count = lp.count;
+   734→        }
+   735→        if (!plan.site) {
+   736→          await chatPush('agent', 'روی کدوم سایت اکانت بسازم؟ اسم یا آدرسش را بنویس (مثلاً qwen یا chat.qwen.ai).');
+   737→          return { ok: true };
+   738→        }
+   739→      }
+   740→      if (!plan.count || plan.count < 1) plan.count = 1;
+   741→      return chatStartJob(plan);
+   742→    }
+   743→    case 'status': {
+   744→      const job = st.job;
+   745→      if (!job || job.finishedAt) await chatPush('agent', 'در حال حاضر کاری در جریان نیست. بنویس «کمک» تا شروع کنیم.');
+   746→      else
+   747→        await chatPush(
+   748→          'agent',
+   749→          `کار «${job.siteLabel || job.site}»: ${job.done} موفق، ${job.failed} ناموفق از ${job.count} — ${job.pausedForHint ? 'منتظر آدرس صفحهٔ ثبت‌نام از تو هستم' : 'در جریان است'}.`
+   750→        );
+   751→      return { ok: true };
+   752→    }
+   753→    case 'cancel': {
+   754→      const job = st.job;
+   755→      job && (job.cancelled = true) && (await chatSetJob(job));
+   756→      for (const [tabId, run] of typeof agentRuns !== 'undefined' ? agentRuns : []) {
+   757→        if (['running', 'waiting_captcha_manual', 'waiting_otp'].includes(run.status)) {
+   758→          run.status = 'cancelled';
+   759→          if (run._manualResolve) run._manualResolve();
+   760→        }
+   761→      }
+   762→      await chatPush('agent', 'لغو شد. هر وقت خواستی دوباره بگو.');
+   763→      return { ok: true };
+   764→    }
+   765→    case 'help': {
+   766→      await chatPush(
+   767→        'agent',
+   768→        'راهنما: کافیست بنویسی مثلاً «۲ تا اکانت qwen بساز» یا «chat.qwen.ai — ۳ اکانت». من صفحهٔ ثبت‌نام را باز می‌کنم، ایمیل موقت می‌سازم، فرم را پر می‌کنم، کپچا/اسلایدر را حل می‌کنم و کد تأیید را از ایمیل می‌گیرم. حساب‌ها در «خزانه» ذخیره می‌شوند. وسط کار می‌توانی «وضعیت» یا «لغو کن» بگویی.'
+   769→      );
+   770→      return { ok: true };
+   771→    }
+   772→    default: {
+   773→      if (plan.reply) await chatPush('agent', plan.reply);
+   774→      else
+   775→        await chatPush(
+   776→          'agent',
+   777→          'شنیدم! اگر می‌خواهی اکانت بسازم بنویس مثل: «۳ اکانت qwen بساز» — یا «کمک» برای راهنما.'
+   778→        );
+   779→      return { ok: true };
+   780→    }
+   781→  }
+   782→}
+   783→
+   784→// ----------------------------------------------------------------------------
+   785→// listener پیام‌های چت
+   786→// ----------------------------------------------------------------------------
+   787→
+   788→chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+   789→  if (!msg || typeof msg.type !== 'string' || !msg.type.startsWith('AGENT_CHAT_')) return false;
+   790→  (async () => {
+   791→    try {
+   792→      switch (msg.type) {
+   793→        case 'AGENT_CHAT_SEND':
+   794→          return sendResponse(await agentChatSend(msg.text, msg.forceUrlHint));
+   795→        case 'AGENT_CHAT_STATE': {
+   796→          const st = await chatGetState();
+   797→          return sendResponse({ ok: true, ...st, active: chatJobActive });
+   798→        }
+   799→        case 'AGENT_CHAT_SAVE_SETTINGS':
+   800→          return sendResponse({ ok: true, settings: await chatSaveSettings(msg.settings || {}) });
+   801→        case 'AGENT_CHAT_CANCEL': {
+   802→          const st = await chatGetState();
+   803→          if (st.job) {
+   804→            st.job.cancelled = true;
+   805→            await chatSetJob(st.job);
+   806→          }
+   807→          for (const [tabId, run] of typeof agentRuns !== 'undefined' ? agentRuns : []) {
+   808→            if (['running', 'waiting_captcha_manual', 'waiting_otp'].includes(run.status)) {
+   809→              run.status = 'cancelled';
+   810→              if (run._manualResolve) run._manualResolve();
+   811→            }
+   812→          }
+   813→          chatJobActive = false;
+   814→          await chatPush('agent', 'لغو شد ✓');
+   815→          return sendResponse({ ok: true });
+   816→        }
+   817→        case 'AGENT_CHAT_CLEAR': {
+   818→          await chatSaveMsgs([]);
+   819→          await chatSetJob(null);
+   820→          chatBroadcastReset();
+   821→          await chatPush('agent', 'چت تمیز شد. بگو چی بسازم! 😊');
+   822→          return sendResponse({ ok: true });
+   823→        }
+   824→        default:
+   825→          return sendResponse({ ok: false, error: 'unknown_chat_msg' });
+   826→      }
+   827→    } catch (e) {
+   828→      try {
+   829→        sendResponse({ ok: false, error: e?.message || 'chat_error' });
+   830→      } catch {}
+   831→    }
+   832→  })();
+   833→  return true; // async sendResponse
+   834→});
+   835→
