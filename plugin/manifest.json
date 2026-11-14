@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "سوییچر مولتی‌اکانت + ایمیل موقت (AI Multi-Account & Mail)",
   "short_name": "Multi-Account AI",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "ذخیره ۳۰+ اکانت در هر سایت، باز کردن همزمان در تب‌های مجزا، جابه‌جایی ۱-کلیکی، موتور ایمیل موقت و ایجنت چت‌طور با مغز هوشمند، حل اسلایدر و کپچا و درج کد تأیید",
   "permissions": [
     "cookies",
