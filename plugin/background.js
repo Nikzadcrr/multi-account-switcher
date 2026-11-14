@@ -2630,9 +2630,25 @@ async function agentWaitForOtp(run, mailboxId, baselineIds) {
   }
   const seen = new Set((baselineIds || []).map(String));
   const deadline = Date.now() + AGENT_OTP_WAIT_MS;
+  // درس تست زندهٔ qwen: درخواست ارسال کد خودش ممکن است چالش اسلایدر تازه بگیرد؛
+  // حین انتظار ایمیل، هر چند دور یک‌بار اسلایدر را چک و حل کن تا OTP واقعاً ارسال شود.
+  let sliderCheckCounter = 0;
 
   while (Date.now() < deadline) {
     if (run.status === 'cancelled') return null;
+    // هر ۴ دور (~۲۰ ثانیه) یک‌بار چالش اسلایدر تازه را چک کن
+    if (++sliderCheckCounter % 4 === 0 && typeof agentDetectSliderPresence === 'function') {
+      try {
+        const sliderThere = await agentDetectSliderPresence(tabId);
+        if (sliderThere) {
+          agentEmit(run, {}, 'چالش اسلایدر جدید هنگام ارسال کد ظاهر شد؛ حل خودکار…');
+          const solved = await agentSolveAliyunSlider(tabId, run, 2);
+          if (solved) {
+            agentEmit(run, {}, 'اسلایدر دوم حل شد ✓ — صفحه به‌طور خودکار درخواست کد را تکرار می‌کند.');
+          }
+        }
+      } catch {}
+    }
     let messages = [];
     try {
       messages = await listMessagesForMailbox(mb);
