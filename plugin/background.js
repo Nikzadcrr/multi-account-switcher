@@ -2,6 +2,9 @@
 // AI Multi-Account Switcher & Simultaneous Container Engine (Manifest V3)
 // ============================================================================
 
+// ماژول‌های ایجنت: مغز چت + حل‌کنندهٔ اسلایدر + کپچای متنی (ترتیب مهم نیست، همه global)
+importScripts('agent-slider.js', 'agent-captcha.js', 'agent-chat.js');
+
 const TWO_PART_TLDS = new Set([
   'co.uk', 'org.uk', 'ac.uk', 'gov.uk',
   'com.au', 'net.au', 'org.au',
@@ -2771,6 +2774,12 @@ async function runAgentFlow(tabId, opts) {
         agentEmit(run, {}, 'دکمه ثبت‌نام پیدا نشد؛ خودتان فرم را ارسال کنید — ایجنت برای کد تأیید منتظر می‌ماند.');
       }
       await agentSleep(2200);
+    }
+
+    // فاز ۴.۵ — چالش WAF/اسلایدر پس از submit (qwen و مشابه)
+    if (typeof agentPostSubmitChallengeHook === 'function') {
+      await agentPostSubmitChallengeHook(run, tabId);
+      if (run.status === 'cancelled') return;
     }
 
     // فاز ۵ — ذخیره در خزانه

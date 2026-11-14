@@ -351,18 +351,85 @@
     <!-- VIEW 3: AGENT — ثبت‌نام خودکار + خزانه حساب‌ها                       -->
     <!-- ================================================================== -->
     <div id="agentView" class="agent-view hidden">
-      <!-- پیل‌های سوییچ بین پنل اجرا و خزانه -->
+      <!-- پیل‌های سوییچ بین چت ایجنت، پنل اجرا و خزانه -->
       <div class="agent-pills">
+        <button id="agentChatPill" class="agent-pill">
+          <span data-icon="robot" data-icon-class="ic ic-sm"></span>
+          چت ایجنت
+        </button>
         <button id="agentRunPill" class="agent-pill active">
           <span data-icon="zap" data-icon-class="ic ic-sm"></span>
           ثبت‌نام خودکار
         </button>
         <button id="agentVaultPill" class="agent-pill">
           <span data-icon="shield-check" data-icon-class="ic ic-sm"></span>
-          حساب‌های ذخیره‌شده
+          خزانه
           <span id="agentVaultPillCount" class="agent-pill-count">۰</span>
         </button>
       </div>
+
+      <!-- ------------------------------ پنل چت ایجنت ------------------------------ -->
+      <section id="agentChatPanel" class="card agent-card hidden">
+        <div class="chat-head">
+          <div class="chat-title">
+            <span data-icon="robot"></span>
+            ایجنت چت‌طور — بگو چی بسازم
+          </div>
+          <div class="chat-actions">
+            <button id="chatCancelBtn" class="btn btn-secondary btn-sm hidden">
+              <span data-icon="x" data-icon-class="ic ic-sm"></span>
+              لغو کار
+            </button>
+            <button id="chatClearBtn" class="icon-btn icon-btn-sm" title="پاک کردن گفت‌وگو">
+              <span data-icon="trash"></span>
+            </button>
+          </div>
+        </div>
+
+        <div id="chatProgress" class="chat-progress hidden"></div>
+
+        <div id="chatMsgs" class="chat-msgs">
+          <div class="chat-msg chat-msg-agent">
+            <div class="chat-bubble">سلام! بنویس مثلاً «۲ تا اکانت qwen بساز» — صفحه را باز می‌کنم، ایمیل موقت می‌سازم، فرم را پر می‌کنم، کپچا را حل می‌کنم و کد تأیید را می‌گیرم.</div>
+          </div>
+        </div>
+
+        <div class="chat-chips">
+          <button class="chat-chip" data-say="۲ تا اکانت qwen بساز">qwen ×۲</button>
+          <button class="chat-chip" data-say="۱ اکانت github بساز">github</button>
+          <button class="chat-chip" data-say="وضعیت">وضعیت</button>
+          <button class="chat-chip" data-say="کمک">راهنما</button>
+        </div>
+
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" class="input chat-input" placeholder="مثلاً: ۲ تا اکانت qwen بساز…" maxlength="300" />
+          <button id="chatSendBtn" class="btn btn-hero chat-send">
+            <span data-icon="send"></span>
+          </button>
+        </div>
+
+        <details class="agent-solver-box">
+          <summary>
+            <span data-icon="sparkles" data-icon-class="ic ic-sm"></span>
+            مغز ایجنت — LLM رایگان پیش‌فرض یا کلید اختصاصی
+          </summary>
+          <div class="agent-solver-body">
+            <select id="chatBrainProvider" class="select-input">
+              <option value="pollinations" selected>Pollinations — رایگان، بدون کلید (پیش‌فرض)</option>
+              <option value="groq">Groq — سریع، کلید رایگان لازم دارد</option>
+              <option value="gemini">Gemini — کلید رایگان لازم دارد</option>
+              <option value="openrouter">OpenRouter — مدل‌های رایگان با کلید</option>
+            </select>
+            <input type="password" id="chatBrainKey" class="input" placeholder="API Key (برای Pollinations لازم نیست)" spellcheck="false" autocomplete="off" />
+            <input type="text" id="chatBrainModel" class="input" placeholder="نام مدل (اختیاری)" spellcheck="false" />
+            <button id="chatBrainSaveBtn" class="btn btn-secondary btn-sm">
+              <span data-icon="save" data-icon-class="ic ic-sm"></span>
+              ذخیره تنظیمات مغز
+            </button>
+            <div class="agent-hint">مغز فقط برای فهمیدن دستور چت است؛ همه‌ی کارها محلی اجرا می‌شوند. کلید فقط در مرورگر خودت ذخیره می‌شود.</div>
+          </div>
+        </details>
+      </section>
 
       <!-- ------------------------------ پنل اجرای ایجنت ------------------------------ -->
       <section id="agentRunPanel" class="card agent-card">
@@ -558,5 +625,6 @@
 
   <script src="popup.js"></script>
   <script src="popup-agent.js"></script>
+  <script src="popup-chat.js"></script>
 </body>
 </html>

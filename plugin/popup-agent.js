@@ -33,6 +33,8 @@
     agentVaultBadge: document.getElementById('agentVaultBadge'),
     agentView: document.getElementById('agentView'),
     agentRunPill: document.getElementById('agentRunPill'),
+    agentChatPill: document.getElementById('agentChatPill'),
+    agentChatPanel: document.getElementById('agentChatPanel'),
     agentVaultPill: document.getElementById('agentVaultPill'),
     agentVaultPillCount: document.getElementById('agentVaultPillCount'),
     agentRunPanel: document.getElementById('agentRunPanel'),
@@ -130,16 +132,15 @@
     agentTab = tab;
     els.agentRunPill.classList.toggle('active', tab === 'run');
     els.agentVaultPill.classList.toggle('active', tab === 'vault');
+    if (els.agentChatPill) els.agentChatPill.classList.toggle('active', tab === 'chat');
     els.agentRunPanel.classList.toggle('hidden', tab !== 'run');
     els.agentVaultPanel.classList.toggle('hidden', tab !== 'vault');
+    if (els.agentChatPanel) els.agentChatPanel.classList.toggle('hidden', tab !== 'chat');
     if (tab === 'vault') renderAgentVault();
   }
   els.agentRunPill.addEventListener('click', () => switchAgentTab('run'));
   els.agentVaultPill.addEventListener('click', () => switchAgentTab('vault'));
-
-  // ------------------------------------------------------------------
-  // رندر پنل اجرا
-  // ------------------------------------------------------------------
+  if (els.agentChatPill) els.agentChatPill.addEventListener('click', () => switchAgentTab('chat'));
   function renderAgentSite() {
     if (state.supported && state.hostname) {
       els.agentSiteBadge.textContent = state.hostname;
